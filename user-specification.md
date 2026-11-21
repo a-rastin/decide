@@ -52,7 +52,7 @@ In that two-action example, when the case establishes the stated conditions, the
 
 ## Generated CDSS
 
-- Use a shared UI across builds. Route large CDSSs by topic or scenario before asking case questions. Do not add clinical urgency rules unless the source addresses urgency.
+- Use a shared React UI built with HeroUI across builds. Bundle the components and styles locally so the UI works offline. Route large CDSSs by topic or scenario before asking case questions. Do not add clinical urgency rules unless the source addresses urgency.
 - Ask only for Case Inputs relevant to the selected decision. Reuse entered values when their meaning matches. Accept numeric inputs in the relevant units and apply source thresholds exactly.
 - Distinguish unknown from no. Ask for a missing input or show the guidance as conditional, without hiding other supported guidance.
 - Show the next step, why it appeared, a short source citation, and any relevant missing inputs. Distinguish clinical estimates from modeling conventions and label proxies. Exact excerpts are used during the build; the deliverable does not require a full audit trail or per-cell provenance.

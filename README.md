@@ -6,7 +6,9 @@
 
 ## Status
 
-This repository is at the **specification stage**: it contains the design and the project vocabulary, but no implementation yet. The normative description of what Decide must do is [`user-specification.md`](user-specification.md); the agreed terminology lives in [`GLOSSARY.md`](GLOSSARY.md). Installation instructions, the agent prompt, and the one-line installer will appear here once they exist.
+This repository is at the **specification stage**: it contains the design, the project vocabulary, and npm dependencies for the planned UI, but no implementation yet. The normative description of what Decide must do is [`user-specification.md`](user-specification.md); the agreed terminology lives in [`GLOSSARY.md`](GLOSSARY.md). Plugin installation instructions, the agent prompt, and the one-line installer will appear here once they exist.
+
+For development, run `npm ci` to install the locked dependencies, including [HeroUI](https://www.heroui.com/) (`@heroui/react` and `@heroui/styles`). There is no app to start yet. See the [tech stack](dev-docs/tech-stack.md) for the planned integration.
 
 ## How it is meant to work
 
@@ -18,7 +20,7 @@ Decide is not a standalone app. A user installs it into an agent host (**Codex**
 4. **Modeling.** Build one or more Bayesian networks, serialized as schema-validated XML. The XML is authoritative; anything the browser needs at runtime is derived from it.
 5. **Generation.** Emit a portable folder with an `index.html` that opens directly from disk — no server, internet, AI API, or agent host required — plus the XML networks and coverage and test reports.
 
-The generated app uses a shared UI, routes large systems by topic or scenario, asks only for the *Case Inputs* relevant to the selected decision, and distinguishes an unknown input from a negative one. Each suggestion shows why it appeared, a short citation, and any missing inputs.
+The generated app will use a shared React UI built with HeroUI, with all assets shipped locally. It routes large systems by topic or scenario, asks only for the *Case Inputs* relevant to the selected decision, and distinguishes an unknown input from a negative one. Each suggestion shows why it appeared, a short citation, and any missing inputs.
 
 ### A note on probabilities
 
@@ -34,6 +36,9 @@ Decide reports modeled decisions, *Unresolved Decisions*, and unreadable section
 | --- | --- |
 | [`user-specification.md`](user-specification.md) | Normative specification of the plugin, workflow, and generated CDSS. |
 | [`GLOSSARY.md`](GLOSSARY.md) | Canonical project terms and the words to avoid. |
+| [`dev-docs/mission.md`](dev-docs/mission.md) | Project mission and guiding principles. |
+| [`dev-docs/tech-stack.md`](dev-docs/tech-stack.md) | Implementation stack and runtime constraints. |
+| [`dev-docs/roadmap.md`](dev-docs/roadmap.md) | Small implementation phases with exit checks. |
 
 ## Contributing
 
