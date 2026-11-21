@@ -56,11 +56,16 @@ In that two-action example, when the case establishes the stated conditions, the
 - Ask only for Case Inputs relevant to the selected decision. Reuse entered values when their meaning matches. Accept numeric inputs in the relevant units and apply source thresholds exactly.
 - Distinguish unknown from no. Ask for a missing input or show the guidance as conditional, without hiding other supported guidance.
 - Show the next step, why it appeared, a short source citation, and any relevant missing inputs. Distinguish clinical estimates from modeling conventions and label proxies. Exact excerpts are used during the build; the deliverable does not require a full audit trail or per-cell provenance.
+- For each modeled decision, provide a tornado chart for the selected guidance option. Vary one relevant Case Input at a time, holding the other inputs and all model assumptions fixed. Each sensitivity bar shows the range of comparable Do-Not-Consider Scores, not why the source guidance applies or what causes an outcome. Test all valid categories for categorical inputs. For numeric inputs, use source- or model-defined ranges and thresholds; do not invent a range. Show the values tested and their units, where applicable.
+- Provide an interactive what-if sandbox that lets users change one or more relevant Case Inputs without changing the original synthetic case or any model assumptions. Show the original and what-if guidance and scores side by side, and let users reset to the original inputs.
+- When guidance does not apply, identify the source condition and do not plot or compare a score for that state. If missing inputs or inapplicable alternatives leave no meaningful score comparison, explain why instead of showing an empty chart or a zero. Keep the sandbox available so users can try a valid synthetic scenario.
 - Deliver a portable folder with an `index.html` that opens directly from disk, the XML networks, and coverage and test reports. The app must work without a server, internet connection, AI API, or agent host.
 
 ## Verification and rebuilds
 
 Automatically test representative synthetic cases in which guidance should apply, should not apply, or cannot yet be evaluated. Verify that `index.html` runs offline directly from disk. Report failures by affected decision.
+
+Verify offline that sensitivity bars vary one Case Input at a time, that inapplicable states are not scored in comparisons, and that sandbox changes and reset leave the original case unchanged.
 
 Report coverage separately from test results. Distinguish modeled decisions, unresolved decisions, and unreadable or unprocessed sections. A partial build can be delivered for the decisions that pass verification, but it must be labeled partial and must not present unresolved decisions as usable guidance.
 

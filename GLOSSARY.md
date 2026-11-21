@@ -28,3 +28,9 @@ An alternative outcome of the same Clinical Decision. Unlike actions that can be
 
 **Do-Not-Consider Score**:
 A case-specific score for a guidance option, where a higher value means stronger modeled support for not considering that option. It is distinct from the probability assigned to the option itself.
+
+**Sensitivity Bar**:
+The range of comparable Do-Not-Consider Scores for a guidance option when one Case Input varies and the other inputs and model assumptions stay fixed. It describes model sensitivity, not causation; a state in which the guidance does not apply has no comparable score.
+
+**What-If Sandbox**:
+A way to compare a synthetic case with a variant that changes only Case Inputs. The original case and model assumptions, including Proxy Estimates and Research Modeling Conventions, stay unchanged.
