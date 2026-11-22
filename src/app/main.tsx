@@ -1,9 +1,9 @@
 import { Label, Radio, RadioGroup } from "@heroui/react";
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { caseValueDisplayLabel, evaluateDecision, unknownCaseLabel, type DecideModel, type MultiModel } from "../model.ts";
+import { caseValueDisplayLabel, evaluateDecision, evaluateNetworkDecision, unknownCaseLabel, type DecideModel, type RoutedDecision, type RoutedModel } from "../model.ts";
 
-declare const __DECIDE_MODEL__: DecideModel | MultiModel;
+declare const __DECIDE_MODEL__: DecideModel | RoutedModel;
 
 const scoreFormat = new Intl.NumberFormat("en", {
   style: "percent",
@@ -13,22 +13,19 @@ const scoreFormat = new Intl.NumberFormat("en", {
 const knownCasePrefix = "known:";
 const unknownCaseOption = "unknown";
 
-function App({ model, selectedOption, setSelectedOption, navigation }: {
-  model: DecideModel;
-  selectedOption: string;
-  setSelectedOption: (value: string) => void;
+function App({ model, values, setValue, navigation }: {
+  model: DecideModel | RoutedDecision;
+  values: Record<string, string>;
+  setValue: (id: string, value: string) => void;
   navigation?: React.ReactNode;
 }) {
-  const { caseInput, decision } = model;
-  const caseOptions = [
-    ...("values" in caseInput ? caseInput.values : []).map(({ id, label }) => ({
-      value: `${knownCasePrefix}${id}`,
-      label: caseValueDisplayLabel(label),
-    })),
-    { value: unknownCaseOption, label: unknownCaseLabel },
-  ];
-  const caseValue = "type" in caseInput ? selectedOption : selectedOption === unknownCaseOption ? null : selectedOption.slice(knownCasePrefix.length);
-  const result = evaluateDecision(decision, caseValue);
+  const { decision } = model;
+  const valueFor = (id: string) => Object.hasOwn(values, id) ? values[id] : undefined;
+  const caseInputs = "caseInputs" in model ? model.caseInputs : [model.caseInput];
+  const result = "caseInputs" in model ? evaluateNetworkDecision(model.decision, values)
+    : evaluateDecision(model.decision, valueFor(model.caseInput.id) || null);
+  const convention = "convention" in decision ? decision.convention : decision.distribution.convention;
+  const inputLabels = (ids: string[]) => caseInputs.filter(({ id }) => ids.includes(id)).map(({ label }) => label);
   const applicable = result.status === "applicable";
 
   return (
@@ -51,25 +48,37 @@ function App({ model, selectedOption, setSelectedOption, navigation }: {
         <section className="grid items-start gap-8 md:grid-cols-[2fr_3fr]">
           <section aria-labelledby="case-input-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
             <h2 id="case-input-heading" className="mb-5 text-lg font-semibold">Synthetic Case Input</h2>
-            {"type" in caseInput ? (
-              <label className="block font-medium">
-                {caseInput.label} ({caseInput.unit})
-                <input type="text" inputMode="decimal" value={selectedOption} onChange={(event) => setSelectedOption(event.target.value)}
-                  aria-invalid={result.status === "invalid"} className="mt-3 block w-full rounded-lg border border-slate-300 p-3" />
-              </label>
-            ) : <RadioGroup name={caseInput.id} value={selectedOption} onChange={setSelectedOption} className="gap-3">
-              <Label>{caseInput.label}</Label>
-              {caseOptions.map(({ value, label }) => (
-                <Radio key={value} value={value}>
-                  <Radio.Content className="w-full rounded-lg border border-slate-200 p-3 hover:bg-slate-50 data-[selected]:border-teal-600 data-[selected]:bg-teal-50">
-                    <Radio.Control>
-                      <Radio.Indicator />
-                    </Radio.Control>
-                    <Label>{label}</Label>
-                  </Radio.Content>
-                </Radio>
-              ))}
-            </RadioGroup>}
+            <div className="space-y-5">
+              {caseInputs.map((caseInput) => {
+                const selected = valueFor(caseInput.id) ?? "";
+                return "type" in caseInput ? (
+                  <label key={caseInput.id} className="block font-medium">
+                    {caseInput.label} ({caseInput.unit})
+                    <input type="text" inputMode="decimal" value={selected} onChange={(event) => setValue(caseInput.id, event.target.value)}
+                      aria-invalid={result.status === "invalid"} className="mt-3 block w-full rounded-lg border border-slate-300 p-3" />
+                  </label>
+                ) : (
+                  <RadioGroup key={caseInput.id} name={caseInput.id} className="gap-3"
+                    value={selected ? `${knownCasePrefix}${selected}` : unknownCaseOption}
+                    onChange={(value) => setValue(caseInput.id, value === unknownCaseOption ? "" : value.slice(knownCasePrefix.length))}>
+                    <Label>{caseInput.label}</Label>
+                    {[
+                      ...caseInput.values.map(({ id, label }) => ({ value: `${knownCasePrefix}${id}`, label: caseValueDisplayLabel(label) })),
+                      { value: unknownCaseOption, label: unknownCaseLabel },
+                    ].map(({ value, label }) => (
+                      <Radio key={value} value={value}>
+                        <Radio.Content className="w-full rounded-lg border border-slate-200 p-3 hover:bg-slate-50 data-[selected]:border-teal-600 data-[selected]:bg-teal-50">
+                          <Radio.Control>
+                            <Radio.Indicator />
+                          </Radio.Control>
+                          <Label>{label}</Label>
+                        </Radio.Content>
+                      </Radio>
+                    ))}
+                  </RadioGroup>
+                );
+              })}
+            </div>
           </section>
 
           <section aria-labelledby="result-heading" aria-live="polite" className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
@@ -77,10 +86,11 @@ function App({ model, selectedOption, setSelectedOption, navigation }: {
             {result.status === "missing" ? (
               <article className="space-y-3">
                 <h3 className="font-serif text-3xl tracking-tight text-slate-950">Missing Case Input</h3>
-                <p className="text-slate-700">{caseInput.label}</p>
+                {inputLabels("inputs" in result ? result.inputs : [caseInputs[0].id]).map((label, index) =>
+                  <p key={index} className="text-slate-700">{label}</p>)}
               </article>
             ) : result.status === "invalid" ? (
-              <p role="alert">Invalid numeric Case Input</p>
+              <p role="alert">{"inputs" in result ? `Invalid Case Input: ${inputLabels(result.inputs).join(", ")}` : "Invalid numeric Case Input"}</p>
             ) : (
               <article className="space-y-5">
                 <h3 className="font-serif text-3xl tracking-tight text-slate-950">
@@ -93,17 +103,19 @@ function App({ model, selectedOption, setSelectedOption, navigation }: {
                 </dl>
                 {applicable && (
                   <>
-                    <section className="rounded-xl bg-teal-950 p-5 text-teal-50">
+                    {"doNotConsiderScore" in result ? <section className="rounded-xl bg-teal-950 p-5 text-teal-50">
                       <h4 className="font-medium">Do-Not-Consider Score</h4>
                       <p className="my-2 text-4xl font-semibold tabular-nums">{scoreFormat.format(result.doNotConsiderScore)}</p>
                       <p className="text-sm leading-relaxed text-teal-100">
                         This score measures modeled support for leaving this action out of consideration.
                         It does not estimate a clinical outcome.
                       </p>
-                    </section>
+                    </section> : <p>{result.scoreUnavailable.reason === "missing"
+                        ? `No score. Supply: ${inputLabels(result.scoreUnavailable.inputs).join(", ")}.`
+                        : "No score. The entered evidence has zero probability in this model."}</p>}
                     <section>
                       <h4 className="text-sm font-semibold">Research Modeling Convention</h4>
-                      <p className="mt-1 text-sm leading-relaxed text-slate-700">{decision.distribution.convention}</p>
+                      <p className="mt-1 text-sm leading-relaxed text-slate-700">{convention}</p>
                     </section>
                   </>
                 )}
@@ -116,7 +128,7 @@ function App({ model, selectedOption, setSelectedOption, navigation }: {
   );
 }
 
-function Root({ model }: { model: DecideModel | MultiModel }) {
+function Root({ model }: { model: DecideModel | RoutedModel }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [routeId, setRouteId] = useState("");
   const [decisionId, setDecisionId] = useState("");
@@ -152,10 +164,8 @@ function Root({ model }: { model: DecideModel | MultiModel }) {
       <main className="mx-auto max-w-6xl px-6 py-10">{navigation}</main>
     </>
   );
-  const id = current.caseInput.id;
-  const selectedOption = Object.hasOwn(values, id) ? values[id] : "type" in current.caseInput ? "" : unknownCaseOption;
-  return <App model={current} navigation={navigation} selectedOption={selectedOption}
-    setSelectedOption={(value) => setValues((previous) => ({ ...previous, [id]: value }))} />;
+  return <App model={current} navigation={navigation} values={values}
+    setValue={(id, value) => setValues((previous) => ({ ...previous, [id]: value }))} />;
 }
 
 const root = document.getElementById("app");

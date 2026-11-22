@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<decide-model version="3">
+  <case-input id="screen" label="Synthetic screening result" type="categorical">
+    <value id="clear" label="Clear" />
+    <value id="flagged" label="Flagged" />
+    <value id="outside" label="Outside exercise" />
+  </case-input>
+  <network id="review-network">
+    <node id="screening">
+      <state id="ordinary" label="Ordinary pattern" />
+      <state id="signal" label="Flagged pattern" />
+      <state id="excluded" label="Outside exercise" />
+      <parent node="pattern" />
+      <row when="a" probabilities="0.6 0.2 0.2" />
+      <row when="b" probabilities="0.2 0.6 0.2" />
+    </node>
+    <node id="pattern">
+      <state id="a" label="Pattern A" />
+      <state id="b" label="Pattern B" />
+      <row probabilities="0.5 0.5" />
+    </node>
+    <node id="next-step">
+      <state id="review" label="Consider reviewing the synthetic sample" />
+      <state id="defer" label="Defer the review decision" />
+      <parent node="pattern" />
+      <row when="a" probabilities="0.2 0.8" />
+      <row when="b" probabilities="0.8 0.2" />
+    </node>
+  </network>
+  <route id="sample" label="Sample review">
+    <clinical-decision id="review-sample" title="Synthetic sample review" network="review-network" action-node="next-step" guidance="review">
+      <observe input="screen" node="screening">
+        <map value="clear" state="ordinary" />
+        <map value="flagged" state="signal" />
+        <map value="outside" state="excluded" />
+      </observe>
+      <applicability>
+        <any>
+          <equals input="screen" value="clear" />
+          <equals input="screen" value="flagged" />
+        </any>
+        <source-condition>The synthetic screening result is Clear or Flagged.</source-condition>
+        <citation>Synthetic Review Note §1</citation>
+      </applicability>
+      <research-modeling-convention>Authored weights represent modeled support for competing actions in this exercise, not measured clinical probabilities.</research-modeling-convention>
+    </clinical-decision>
+  </route>
+</decide-model>

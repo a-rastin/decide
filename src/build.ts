@@ -13,8 +13,9 @@ async function generateApp(modelPath: string, outputPath: string, casesPath?: st
   const app = join(project, "src", "app");
   const xml = await readFile(modelPath);
   const parsed = readBuildModel(xml);
-  if ("version" in parsed && !casesPath) throw new Error("Version 2 requires --cases for verification");
-  if (!("version" in parsed) && inventoryPath) throw new Error("--inventory requires a version 2 model");
+  if ("version" in parsed && !casesPath) throw new Error(`Version ${parsed.version} requires --cases for verification`);
+  if (!("version" in parsed) && inventoryPath) throw new Error("--inventory requires a version 2 or 3 model");
+  if ("version" in parsed && parsed.version === 3 && !inventoryPath) throw new Error("Version 3 requires --inventory for coverage and test reports");
   const verification = "version" in parsed ? verifyCases(parsed, await readFile(casesPath!, "utf8")) : undefined;
   const reports = "version" in parsed && inventoryPath ? createReports(parsed, await readFile(inventoryPath, "utf8"), verification!) : undefined;
   const model = verification ? { ...verification.model, partial: reports?.partial ?? (verification.results.size !== verification.model.routes.flatMap((route) => route.decisions).length) } : parsed;

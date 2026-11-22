@@ -6,7 +6,7 @@
 
 ## Status
 
-The current implementation builds portable apps from hand-authored XML for the synthetic six-week and multi-decision examples. Automated source discovery and the remaining release features are not yet implemented. The full release requirements and project vocabulary are documented in the [user specification](dev-docs/user-specification.md) and [glossary](GLOSSARY.md).
+The current implementation builds portable apps from hand-authored XML, including the synthetic six-week, mixed multi-decision, and v3 latent review examples. Automated source discovery and the remaining release features are not yet implemented. The full release requirements and project vocabulary are documented in the [user specification](dev-docs/user-specification.md) and [glossary](GLOSSARY.md).
 
 ## Build the six-week follow-up example
 
@@ -63,6 +63,19 @@ verifies, no app is published. See the [input contract](dev-docs/specs/2026-11-2
 for model and case requirements.
 
 The same rerun and replacement rules apply as for the six-week build.
+
+## Build the v3 latent review example
+
+```sh
+npm run build -- fixtures/latent-review/model.xml path/to/output \
+  --cases fixtures/latent-review/cases.json \
+  --inventory fixtures/latent-review/inventory.json
+```
+
+Open the printed `index.html` directly. Choose **Clear** or **Flagged** to see
+how an observed categorical value changes the score for the same guidance
+option via an unobserved node. See the [v3 XML and verification contract](dev-docs/specs/2026-11-22-add-offline-case-exploration/xml-v3.md)
+for the expected scores, model syntax, and inference limit.
 
 ## Run the tests
 

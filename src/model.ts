@@ -11,30 +11,96 @@ export interface NetworkNode {
   rows: { when: string[]; probabilities: number[] }[];
 }
 
+export type NetworkCondition =
+  | { kind: "equals"; input: string; value: string }
+  | { kind: "all" | "any"; operands: NetworkCondition[] };
+
+export interface NetworkDecision {
+  action: { node: string; id: string; label: string };
+  inputs: { id: string; values: string[]; node: string; required: boolean; states?: string[] }[];
+  condition: NetworkCondition;
+  nodes: NetworkNode[];
+}
+
+type NetworkOutcome =
+  | { status: "missing" | "invalid"; inputs: string[] }
+  | { status: "unmet" }
+  | { status: "applicable"; action: ActionReference; doNotConsiderScore: number }
+  | { status: "applicable"; action: ActionReference; scoreUnavailable: { reason: "missing"; inputs: string[] } | { reason: "zero-likelihood" } };
+
+/** Evaluate source applicability before using the decision's declared scoring evidence. */
+export function evaluateNetworkDecision(decision: NetworkDecision, values: Record<string, string | undefined>): NetworkOutcome {
+  const valueFor = (id: string) => Object.hasOwn(values, id) ? values[id] : undefined;
+  type ConditionResult = { state: "true" | "false" | "missing" | "invalid"; inputs: string[] };
+  function conditionResult(condition: NetworkCondition): ConditionResult {
+    if (condition.kind === "equals") {
+      const input = decision.inputs.find(({ id }) => id === condition.input)!;
+      const value = valueFor(input.id);
+      if (value === undefined || value === "") return { state: "missing", inputs: [input.id] };
+      if (!input.values.includes(value)) return { state: "invalid", inputs: [input.id] };
+      return { state: value === condition.value ? "true" : "false", inputs: [] };
+    }
+    const results = condition.operands.map(conditionResult);
+    const decisive = condition.kind === "all" ? "false" : "true";
+    if (results.some(({ state }) => state === decisive)) return { state: decisive, inputs: [] };
+    const invalid = results.filter(({ state }) => state === "invalid");
+    if (invalid.length) return { state: "invalid", inputs: [...new Set(invalid.flatMap(({ inputs }) => inputs))] };
+    const missing = results.filter(({ state }) => state === "missing");
+    if (missing.length) return { state: "missing", inputs: [...new Set(missing.flatMap(({ inputs }) => inputs))] };
+    return { state: condition.kind === "all" ? "true" : "false", inputs: [] };
+  }
+  const applicability = conditionResult(decision.condition);
+  if (applicability.state === "false") return { status: "unmet" };
+  if (applicability.state === "missing" || applicability.state === "invalid") return { status: applicability.state, inputs: applicability.inputs };
+  const invalid = decision.inputs.filter(({ id, values: allowed }) => {
+    const value = valueFor(id);
+    return value && !allowed.includes(value);
+  }).map(({ id }) => id);
+  if (invalid.length) return { status: "invalid", inputs: invalid };
+  const action = { id: decision.action.id, label: decision.action.label };
+  const missing = decision.inputs.filter(({ id, required }) => required && !valueFor(id)).map(({ id }) => id);
+  if (missing.length) return { status: "applicable", action, scoreUnavailable: { reason: "missing", inputs: missing } };
+  const evidence: Record<string, string> = Object.create(null);
+  for (const input of decision.inputs) {
+    const value = valueFor(input.id);
+    if (value) evidence[input.node] = input.states?.[input.values.indexOf(value)] ?? value;
+  }
+  const posterior = inferPosterior(decision.nodes, decision.action.node, decision.action.id, evidence);
+  return posterior === null
+    ? { status: "applicable", action, scoreUnavailable: { reason: "zero-likelihood" } }
+    : { status: "applicable", action, doNotConsiderScore: 1 - posterior };
+}
+
 /** Exact enumeration over a validated, topologically ordered network. */
 export function inferPosterior(
   nodes: NetworkNode[], action: string, selected: string, evidence: Record<string, string>,
 ): number | null {
-  const assignment: Record<string, string> = {};
-  let total = 0;
-  let selectedTotal = 0;
+  const assignment: Record<string, string> = Object.create(null);
+  // Accumulate log masses so products of small nonzero probabilities do not
+  // turn possible evidence into impossible evidence through underflow.
+  let total = -Infinity;
+  let selectedTotal = -Infinity;
+  function addLogMass(left: number, right: number) {
+    const larger = Math.max(left, right);
+    return larger + Math.log1p(Math.exp(Math.min(left, right) - larger));
+  }
   function visit(index: number, weight: number): void {
     if (index === nodes.length) {
-      total += weight;
-      if (assignment[action] === selected) selectedTotal += weight;
+      total = addLogMass(total, weight);
+      if (assignment[action] === selected) selectedTotal = addLogMass(selectedTotal, weight);
       return;
     }
     const node = nodes[index];
     const row = node.rows.find(({ when }) => when.every((value, i) => assignment[node.parents[i]] === value))!;
     node.states.forEach((state, i) => {
-      if (Object.hasOwn(evidence, node.id) && evidence[node.id] !== state) return;
+      if (!row.probabilities[i] || (Object.hasOwn(evidence, node.id) && evidence[node.id] !== state)) return;
       assignment[node.id] = state;
-      visit(index + 1, weight * row.probabilities[i]);
+      visit(index + 1, weight + Math.log(row.probabilities[i]));
     });
     delete assignment[node.id];
   }
-  visit(0, 1);
-  return total === 0 ? null : selectedTotal / total;
+  visit(0, 0);
+  return total === -Infinity ? null : Math.min(1, Math.exp(selectedTotal - total));
 }
 
 export function caseValueDisplayLabel(label: string): string {
@@ -65,10 +131,24 @@ export interface DecideModel {
   };
 }
 
-export interface MultiModel {
-  version: 2;
+export type CategoricalCaseInput = { id: string; label: string; values: CaseValue[] };
+
+export interface NetworkModelDecision {
+  id: string;
+  caseInputs: CategoricalCaseInput[];
+  decision: NetworkDecision & {
+    title: string;
+    applicability: { condition: string; citation: string };
+    convention: string;
+  };
+}
+
+export type RoutedDecision = (DecideModel & { id: string }) | NetworkModelDecision;
+
+export interface RoutedModel {
+  version: 2 | 3;
   partial?: boolean;
-  routes: { id: string; label: string; decisions: (DecideModel & { id: string })[] }[];
+  routes: { id: string; label: string; decisions: RoutedDecision[] }[];
 }
 
 type DecisionOutcome =

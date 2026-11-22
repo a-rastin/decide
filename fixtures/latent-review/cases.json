@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "cases": [
+    { "id": "clear", "decision": "review-sample", "inputs": { "screen": "clear" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.65 } },
+    { "id": "flagged", "decision": "review-sample", "inputs": { "screen": "flagged" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.35 } },
+    { "id": "outside", "decision": "review-sample", "inputs": { "screen": "outside" }, "expected": { "state": "unmet" } },
+    { "id": "unanswered", "decision": "review-sample", "inputs": {}, "expected": { "state": "missing" } }
+  ]
+}
