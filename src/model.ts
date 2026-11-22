@@ -10,7 +10,6 @@ export interface DecideModel {
   decision: {
     title: string;
     applicability: {
-      input: string;
       value: string;
       condition: string;
       citation: string;
@@ -18,7 +17,6 @@ export interface DecideModel {
     distribution: {
       convention: string;
       guidance: CompetingAction;
-      actions: CompetingAction[];
     };
   };
 }

@@ -49,7 +49,6 @@ export function readModel(xml: Uint8Array): DecideModel {
     decision: {
       title: attribute(decision, "title"),
       applicability: {
-        input: attribute(applicability, "input"),
         value: attribute(applicability, "value"),
         condition: text(applicability, "source-condition"),
         citation: text(applicability, "citation"),
@@ -57,7 +56,6 @@ export function readModel(xml: Uint8Array): DecideModel {
       distribution: {
         convention: text(distribution, "research-modeling-convention"),
         guidance,
-        actions,
       },
     },
   };
