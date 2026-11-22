@@ -18,7 +18,7 @@ Open the generated `index.html` via `file://` in a browser with networking disab
 | Does not apply | Names the unmet source condition. Does not present the six-week action as applicable or display a score. |
 | Unknown | Names the missing Case Input or prompts for it. Does not treat unknown as no, present the six-week action as applicable, or display a score. |
 
-- [ ] Automate the case assertions through the visible UI. Switch from the applicable case to each unscored state and confirm that the previous score clears.
+- [x] Automate the case assertions through the visible UI. Switch from the applicable case to each unscored state and confirm that the previous score clears.
 - [x] Confirm the HeroUI control is visibly styled and can change Case Inputs. Confirm the research-only, not-for-clinical-use notice is visible.
 - [x] Confirm the app makes no network requests, and repeat the open-and-interact check from a relocated output folder.
 
@@ -58,3 +58,18 @@ npm test
 - The focused check failed before the change because selecting **No** did not explain the unmet condition. It passed after the change.
 - Chromium opened the generated app via `file://` with networking disabled. Within the same page, selecting **Yes** showed the recommendation and **1%** score. Switching to **No** showed the unmet source condition and citation and removed both the recommendation and score. The check passed again after relocating the app, with zero network requests in either location.
 - The default build, type check, and both browser tests passed. The temporary 95/5 fixture also cleared the recommendation and **5%** score after switching to **No**.
+
+## Task 03 verification
+
+With the Task 01 prerequisites installed, run the focused browser check and the full validation commands.
+
+```sh
+npm test -- tests/offline.spec.ts --grep 'even after relocation'
+npm run build
+npm run typecheck
+npm test
+```
+
+- The focused check failed before the change because the **Unknown** option was missing. It passed after the change in both the original and relocated app folders, with zero network requests.
+- In the same offline `file://` page, switching from **Yes** to **Unknown** asked whether all baseline checks were completed and cleared the six-week recommendation and **1%** score. The result showed missing evidence without an unmet-condition message.
+- The default build, type check, and both browser tests passed. The temporary 95/5 fixture also cleared the recommendation and **5%** score on the same transition.

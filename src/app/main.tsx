@@ -10,9 +10,21 @@ const scoreFormat = new Intl.NumberFormat("en", {
   maximumFractionDigits: 6,
 });
 
+const knownCasePrefix = "known:";
+const unknownCaseOption = "unknown";
+const unknownCaseLabel = "Unknown";
+
 function App({ model }: { model: DecideModel }) {
-  const [caseValue, setCaseValue] = useState<string | null>(null);
+  const [selectedOption, setSelectedOption] = useState(unknownCaseOption);
   const { caseInput, decision } = model;
+  const caseOptions = [
+    ...caseInput.values.map(({ id, label }) => ({
+      value: `${knownCasePrefix}${id}`,
+      label: label.trim().toLowerCase() === unknownCaseOption ? `${label} (modeled value)` : label,
+    })),
+    { value: unknownCaseOption, label: unknownCaseLabel },
+  ];
+  const caseValue = selectedOption === unknownCaseOption ? null : selectedOption.slice(knownCasePrefix.length);
   const result = evaluateDecision(decision, caseValue);
 
   return (
@@ -34,15 +46,15 @@ function App({ model }: { model: DecideModel }) {
         <section className="grid items-start gap-8 md:grid-cols-[2fr_3fr]">
           <section aria-labelledby="case-input-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
             <h2 id="case-input-heading" className="mb-5 text-lg font-semibold">Synthetic Case Input</h2>
-            <RadioGroup name={caseInput.id} value={caseValue} onChange={setCaseValue} className="gap-3">
+            <RadioGroup name={caseInput.id} value={selectedOption} onChange={setSelectedOption} className="gap-3">
               <Label>{caseInput.label}</Label>
-              {caseInput.values.map((value) => (
-                <Radio key={value.id} value={value.id}>
+              {caseOptions.map(({ value, label }) => (
+                <Radio key={value} value={value}>
                   <Radio.Content className="w-full rounded-lg border border-slate-200 p-3 hover:bg-slate-50 data-[selected]:border-teal-600 data-[selected]:bg-teal-50">
                     <Radio.Control>
                       <Radio.Indicator />
                     </Radio.Control>
-                    <Label>{value.label}</Label>
+                    <Label>{label}</Label>
                   </Radio.Content>
                 </Radio>
               ))}
@@ -52,7 +64,10 @@ function App({ model }: { model: DecideModel }) {
           <section aria-labelledby="result-heading" aria-live="polite" className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
             <h2 id="result-heading" className="mb-4 text-lg font-semibold">Decision result</h2>
             {caseValue === null ? (
-              <p className="text-slate-600">Guidance appears when the source condition is met.</p>
+              <article className="space-y-3">
+                <h3 className="font-serif text-3xl tracking-tight text-slate-950">Missing Case Input</h3>
+                <p className="text-slate-700">{caseInput.label}</p>
+              </article>
             ) : (
               <article className="space-y-5">
                 <h3 className="font-serif text-3xl tracking-tight text-slate-950">
