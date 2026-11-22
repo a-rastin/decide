@@ -1,6 +1,7 @@
-import { spawnSync } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, test, type TestInfo } from "@playwright/test";
+import { buildApp } from "./build-app.ts";
 
 const fixture = "fixtures/six-week-follow-up/model.xml";
 
@@ -17,9 +18,7 @@ async function expectBuildRejection(
   await mkdir(testInfo.outputDir, { recursive: true });
   await writeFile(model, xml.replace(original, replacement));
 
-  const npm = process.env.npm_execpath;
-  if (!npm) throw new Error("Run the build checks with npm test");
-  const run = spawnSync(process.execPath, [npm, "run", "build", "--", model, output], { encoding: "utf8" });
+  const run = buildApp(model, output);
 
   expect(run.error).toBeUndefined();
   expect(run.status).toBeGreaterThan(0);
@@ -41,6 +40,23 @@ test("rejects malformed model XML with a bare ampersand", async ({}, testInfo) =
   await expectBuildRejection(testInfo, 'label="Yes"', 'label="Yes & ready"', /malformed XML/i);
 });
 
+test("rejects malformed model XML with two leading UTF-8 byte-order marks", async ({}, testInfo) => {
+  await expectBuildRejection(testInfo, "<?xml", "\uFEFF\uFEFF<?xml", /malformed XML/i);
+});
+
+test("accepts model XML with one leading UTF-8 byte-order mark", async ({}, testInfo) => {
+  const model = testInfo.outputPath("model-with-bom.xml");
+  const output = testInfo.outputPath("app");
+  const xml = `\uFEFF${await readFile(fixture, "utf8")}`;
+  await mkdir(testInfo.outputDir, { recursive: true });
+  await writeFile(model, xml);
+
+  const run = buildApp(model, output);
+  expect(run.error).toBeUndefined();
+  expect(run.status, run.stderr).toBe(0);
+  expect(await readFile(join(output, "model.xml"), "utf8")).toBe(xml);
+});
+
 test("rejects structurally invalid model XML with duplicate applicability elements", async ({}, testInfo) => {
   await expectBuildRejection(testInfo, '</applicability>', '</applicability><applicability />',
     /expected exactly one <applicability> in <clinical-decision>.*found 2/i);
@@ -53,6 +69,23 @@ test("rejects an applicability reference to an unknown Case Input", async ({}, t
 
 test("rejects an applicability reference to an unknown Case Input value", async ({}, testInfo) => {
   await expectBuildRejection(testInfo, 'value="yes"', 'value="maybe"', /applicability.*unknown value "maybe"/i);
+});
+
+test("rejects ambiguous Case Input value labels", async ({}, testInfo) => {
+  await expectBuildRejection(testInfo, 'label="No"', 'label="Yes"',
+    /duplicate Case Input display label "Yes".*"yes" and "no"/i);
+});
+
+test("rejects canonically equivalent Case Input value labels", async ({}, testInfo) => {
+  await expectBuildRejection(testInfo, 'label="Yes" />\n    <value id="no" label="No"',
+    'label="Café" />\n    <value id="no" label="Cafe&#x301;"',
+    /duplicate Case Input display label .*"yes" and "no"/i);
+});
+
+test("rejects Case Input value labels that collide after distinguishing a modeled Unknown", async ({}, testInfo) => {
+  await expectBuildRejection(testInfo, 'label="Yes" />\n    <value id="no" label="No"',
+    'label="Unknown" />\n    <value id="no" label=" unknown  (modeled value) "',
+    /duplicate Case Input display label .*"yes" and "no"/i);
 });
 
 test("rejects an action distribution referencing an unknown guidance action", async ({}, testInfo) => {

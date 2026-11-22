@@ -1,5 +1,5 @@
 import { SaxesParser } from "saxes";
-import type { DecideModel } from "./model.ts";
+import { caseValueDisplayLabel, type DecideModel } from "./model.ts";
 
 interface XmlElement {
   name: string;
@@ -129,7 +129,8 @@ function parseXml(xml: Uint8Array): XmlElement {
   parser.on("cdata", appendText);
 
   try {
-    const source = new TextDecoder("utf-8", { fatal: true }).decode(xml);
+    // Preserve the byte-order mark so the XML parser consumes it exactly once.
+    const source = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(xml);
     parser.write(source).close();
   } catch (error) {
     throw new Error(`Malformed XML: ${error instanceof Error ? error.message : String(error)}`);
@@ -156,6 +157,16 @@ export function readModel(xml: Uint8Array): DecideModel {
     return labeledValue(element);
   });
   validateUniqueIds(values, "value");
+  const labelIds = new Map<string, string>();
+  for (const { id, label } of values) {
+    const displayLabel = caseValueDisplayLabel(label);
+    const labelKey = displayLabel.replace(/\s+/g, " ").trim().toLowerCase().normalize("NFC");
+    const previousId = labelIds.get(labelKey);
+    if (previousId !== undefined) {
+      throw new Error(`Duplicate Case Input display label "${displayLabel}" for values "${previousId}" and "${id}"`);
+    }
+    labelIds.set(labelKey, id);
+  }
 
   const decision = child(root, "clinical-decision");
   validateElement(decision, ["title"], ["applicability", "action-distribution"]);

@@ -1,7 +1,7 @@
 import { Label, Radio, RadioGroup } from "@heroui/react";
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { evaluateDecision, type DecideModel } from "../model.ts";
+import { caseValueDisplayLabel, evaluateDecision, unknownCaseLabel, type DecideModel } from "../model.ts";
 
 declare const __DECIDE_MODEL__: DecideModel;
 
@@ -12,7 +12,6 @@ const scoreFormat = new Intl.NumberFormat("en", {
 
 const knownCasePrefix = "known:";
 const unknownCaseOption = "unknown";
-const unknownCaseLabel = "Unknown";
 
 function App({ model }: { model: DecideModel }) {
   const [selectedOption, setSelectedOption] = useState(unknownCaseOption);
@@ -20,12 +19,13 @@ function App({ model }: { model: DecideModel }) {
   const caseOptions = [
     ...caseInput.values.map(({ id, label }) => ({
       value: `${knownCasePrefix}${id}`,
-      label: label.trim().toLowerCase() === unknownCaseOption ? `${label} (modeled value)` : label,
+      label: caseValueDisplayLabel(label),
     })),
     { value: unknownCaseOption, label: unknownCaseLabel },
   ];
   const caseValue = selectedOption === unknownCaseOption ? null : selectedOption.slice(knownCasePrefix.length);
   const result = evaluateDecision(decision, caseValue);
+  const applicable = result.status === "applicable";
 
   return (
     <>
@@ -63,7 +63,7 @@ function App({ model }: { model: DecideModel }) {
 
           <section aria-labelledby="result-heading" aria-live="polite" className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
             <h2 id="result-heading" className="mb-4 text-lg font-semibold">Decision result</h2>
-            {caseValue === null ? (
+            {result.status === "missing" ? (
               <article className="space-y-3">
                 <h3 className="font-serif text-3xl tracking-tight text-slate-950">Missing Case Input</h3>
                 <p className="text-slate-700">{caseInput.label}</p>
@@ -71,14 +71,14 @@ function App({ model }: { model: DecideModel }) {
             ) : (
               <article className="space-y-5">
                 <h3 className="font-serif text-3xl tracking-tight text-slate-950">
-                  {result?.action ?? "Guidance does not apply"}
+                  {applicable ? result.action : "Guidance does not apply"}
                 </h3>
                 <dl className="border-s-2 border-teal-500 ps-4">
-                  <dt className="text-sm font-semibold">{result ? "Applicable source condition" : "Unmet source condition"}</dt>
+                  <dt className="text-sm font-semibold">{applicable ? "Applicable source condition" : "Unmet source condition"}</dt>
                   <dd className="mt-1 text-slate-700">{decision.applicability.condition}</dd>
                   <dd className="mt-1 text-sm text-slate-600"><cite>{decision.applicability.citation}</cite></dd>
                 </dl>
-                {result && (
+                {applicable && (
                   <>
                     <section className="rounded-xl bg-teal-950 p-5 text-teal-50">
                       <h4 className="font-medium">Do-Not-Consider Score</h4>

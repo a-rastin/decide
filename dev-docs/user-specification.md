@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Decide is a plugin that helps AI agents build Bayesian-network-based clinical decision support systems (CDSSs) from medical documents. Decide runs inside an agent host; it is not a standalone app. Its output is a portable web app.
+Decide is a plugin that helps AI agents build Bayesian-network-based clinical decision support systems (CDSSs) from medical documents. Decide runs inside an agent host; it is not a standalone app. Its output is a portable web app for research with synthetic cases. The generated app must be labeled as research-only, must not request real patient data, and is not for clinical use.
 
 ## Installation and supported hosts
 
