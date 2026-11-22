@@ -31,18 +31,30 @@ async function checkOfflineApp(browser: Browser, output: string, score: string) 
     await expect(page.getByText("Research only. Do not use for clinical care.")).toBeVisible();
 
     const input = page.getByRole("radiogroup", { name: "Were all baseline checks completed?" });
+    const sourceCondition = page.getByText("All baseline checks were completed.", { exact: true });
+    const citation = page.getByText("Synthetic Follow-up Note §1", { exact: true });
     await expect(input).toBeVisible();
     await input.getByText("Yes", { exact: true }).click();
     await expect(input.getByRole("radio", { name: "Yes" })).toBeChecked();
 
     await expect(page.getByRole("heading", { name: "Recheck at six weeks" })).toBeVisible();
-    await expect(page.getByText("All baseline checks were completed.", { exact: true })).toBeVisible();
-    await expect(page.getByText("Synthetic Follow-up Note §1", { exact: true })).toBeVisible();
+    await expect(sourceCondition).toBeVisible();
+    await expect(citation).toBeVisible();
     await expect(page.getByText(score, { exact: true })).toBeVisible();
     await expect(page.getByText("Do-Not-Consider Score", { exact: true })).toBeVisible();
     await expect(page.getByText("Research Modeling Convention", { exact: true })).toBeVisible();
     await expect(page.getByText(/modeled support for leaving this action out of consideration/)).toBeVisible();
     await expect(page.getByText(/does not estimate a clinical outcome/)).toBeVisible();
+
+    await input.getByText("No", { exact: true }).click();
+    await expect(input.getByRole("radio", { name: "No" })).toBeChecked();
+    await expect(page.getByRole("heading", { name: "Guidance does not apply" })).toBeVisible();
+    await expect(page.getByText("Unmet source condition", { exact: true })).toBeVisible();
+    await expect(sourceCondition).toBeVisible();
+    await expect(citation).toBeVisible();
+    await expect(page.getByText("Recheck at six weeks", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Do-Not-Consider Score", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(score, { exact: true })).toHaveCount(0);
 
     expect(pageErrors).toEqual([]);
     expect(networkRequests).toEqual([]);
@@ -51,7 +63,7 @@ async function checkOfflineApp(browser: Browser, output: string, score: string) 
   }
 }
 
-test("shows six-week guidance offline before and after relocating the app", async ({ browser }, testInfo) => {
+test("updates six-week guidance when the source condition changes offline, even after relocation", async ({ browser }, testInfo) => {
   const original = testInfo.outputPath("app");
   const relocated = testInfo.outputPath("relocated app");
   buildApp(fixture, original);

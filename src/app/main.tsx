@@ -51,29 +51,35 @@ function App({ model }: { model: DecideModel }) {
 
           <section aria-labelledby="result-heading" aria-live="polite" className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
             <h2 id="result-heading" className="mb-4 text-lg font-semibold">Decision result</h2>
-            {result ? (
+            {caseValue === null ? (
+              <p className="text-slate-600">Guidance appears when the source condition is met.</p>
+            ) : (
               <article className="space-y-5">
-                <h3 className="font-serif text-3xl tracking-tight text-slate-950">{result.action}</h3>
+                <h3 className="font-serif text-3xl tracking-tight text-slate-950">
+                  {result?.action ?? "Guidance does not apply"}
+                </h3>
                 <dl className="border-s-2 border-teal-500 ps-4">
-                  <dt className="text-sm font-semibold">Applicable source condition</dt>
+                  <dt className="text-sm font-semibold">{result ? "Applicable source condition" : "Unmet source condition"}</dt>
                   <dd className="mt-1 text-slate-700">{decision.applicability.condition}</dd>
                   <dd className="mt-1 text-sm text-slate-600"><cite>{decision.applicability.citation}</cite></dd>
                 </dl>
-                <section className="rounded-xl bg-teal-950 p-5 text-teal-50">
-                  <h4 className="font-medium">Do-Not-Consider Score</h4>
-                  <p className="my-2 text-4xl font-semibold tabular-nums">{scoreFormat.format(result.doNotConsiderScore)}</p>
-                  <p className="text-sm leading-relaxed text-teal-100">
-                    This score measures modeled support for leaving this action out of consideration.
-                    It does not estimate a clinical outcome.
-                  </p>
-                </section>
-                <section>
-                  <h4 className="text-sm font-semibold">Research Modeling Convention</h4>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-700">{decision.distribution.convention}</p>
-                </section>
+                {result && (
+                  <>
+                    <section className="rounded-xl bg-teal-950 p-5 text-teal-50">
+                      <h4 className="font-medium">Do-Not-Consider Score</h4>
+                      <p className="my-2 text-4xl font-semibold tabular-nums">{scoreFormat.format(result.doNotConsiderScore)}</p>
+                      <p className="text-sm leading-relaxed text-teal-100">
+                        This score measures modeled support for leaving this action out of consideration.
+                        It does not estimate a clinical outcome.
+                      </p>
+                    </section>
+                    <section>
+                      <h4 className="text-sm font-semibold">Research Modeling Convention</h4>
+                      <p className="mt-1 text-sm leading-relaxed text-slate-700">{decision.distribution.convention}</p>
+                    </section>
+                  </>
+                )}
               </article>
-            ) : (
-              <p className="text-slate-600">Guidance appears when the source condition is met.</p>
             )}
           </section>
         </section>

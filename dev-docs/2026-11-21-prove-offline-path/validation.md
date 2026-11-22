@@ -43,3 +43,18 @@ npm test
 - The second test built a temporary 95/5 XML model with the same app code. The resulting app displayed **5%** for the same case. The checked-in fixture retains 99/1.
 - The initial browser test failed before the build entry point existed and passed after the implementation. A manual review of a screenshot from the offline Playwright run confirmed that the research-only notice and the styled, selected HeroUI radio option were visible.
 - On the integration branch, `npm ci --offline --no-audit --no-fund` installed the locked dependencies from cache in a fresh source archive. The public build, type check, and both browser tests passed after review. Chromium required execution outside the command sandbox. The application browser contexts ran offline.
+
+## Task 02 verification
+
+With the Task 01 prerequisites installed, run the focused browser check and the full validation commands.
+
+```sh
+npm test -- tests/offline.spec.ts --grep 'even after relocation'
+npm run build
+npm run typecheck
+npm test
+```
+
+- The focused check failed before the change because selecting **No** did not explain the unmet condition. It passed after the change.
+- Chromium opened the generated app via `file://` with networking disabled. Within the same page, selecting **Yes** showed the recommendation and **1%** score. Switching to **No** showed the unmet source condition and citation and removed both the recommendation and score. The check passed again after relocating the app, with zero network requests in either location.
+- The default build, type check, and both browser tests passed. The temporary 95/5 fixture also cleared the recommendation and **5%** score after switching to **No**.
