@@ -40,14 +40,14 @@ test("preserves an existing app when a rebuild rejects the supplied model", asyn
   const files = (await readdir(output)).sort();
   const original = await Promise.all(files.map((file) => readFile(join(output, file))));
   const invalidModel = join(directory, "unsupported.xml");
-  await writeFile(invalidModel, '<decide-model version="2" />');
+  await writeFile(invalidModel, '<decide-model version="99" />');
 
   const run = buildApp(invalidModel, output);
 
   expect(run.error).toBeUndefined();
   expect(run.status).toBeGreaterThan(0);
   expect(run.stderr).toContain(`Build failed for ${invalidModel}:`);
-  expect(run.stderr).toMatch(/unsupported Decide XML schema version "2"/i);
+  expect(run.stderr).toMatch(/unsupported Decide XML schema version "99"/i);
   expect((await readdir(output)).sort()).toEqual(files);
   const afterRebuild = await Promise.all(files.map((file) => readFile(join(output, file))));
   for (const [index, file] of files.entries()) {

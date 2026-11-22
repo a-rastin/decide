@@ -4,6 +4,7 @@ Follow [requirements.md](requirements.md) for scope and [validation.md](validati
 
 ## 1. Define inputs and author the mixed fixture
 
+- See the [Phase 2 input contract](inputs.md) and its linked mixed fixture. The documented version 2 invocation is planned, not yet implemented.
 - Document the multi-decision XML version, the inventory and verification-case inputs, stable identifiers, and how to invoke the public build command with them.
 - Author matching synthetic Markdown, XML, inventory, and independently expected case results. Cover multiple routes, distinct and shared inputs, a numeric threshold, an unmodeled decision, and a modeled decision with a deliberate verification mismatch.
 - Keep the six-week fixture as a version 1 regression. Ensure unsupported-version tests use a version that remains unsupported after the extension.

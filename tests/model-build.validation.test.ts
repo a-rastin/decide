@@ -35,8 +35,8 @@ async function expectBuildRejection(
 }
 
 test("rejects an unsupported Decide XML schema version", async (context) => {
-  await expectBuildRejection(context, '<decide-model version="1">', '<decide-model version="2">',
-    /unsupported Decide XML schema version "2".+expected "1"/i);
+  await expectBuildRejection(context, '<decide-model version="1">', '<decide-model version="99">',
+    /unsupported Decide XML schema version "99".+expected "1"/i);
 });
 
 test("rejects malformed model XML with unquoted attributes", async (context) => {

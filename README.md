@@ -19,7 +19,7 @@ npm run build
 
 Open `dist/index.html` directly in a browser. The folder contains the authoritative `model.xml` and the local `app.js` and `app.css` assets. You can move the whole folder and reopen `index.html` from its new location. Choose **Yes** for the synthetic Case Input to see the six-week guidance. The [synthetic source and cases](fixtures/six-week-follow-up/source.md) document the example.
 
-To build a copy with a different model or destination, pass the XML path and output folder in that order. See the [Decide XML schema](dev-docs/2026-11-21-prove-offline-path/xml-model.md) for the supported structure and validation rules.
+To build a copy with a different model or destination, pass the XML path and output folder in that order. See the [Decide XML schema](dev-docs/specs/2026-11-21-prove-offline-path/xml-model.md) for the supported structure and validation rules.
 
 ```sh
 npm run build -- fixtures/six-week-follow-up/model.xml path/to/output
@@ -35,7 +35,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs both suites. Use `npm run test:offline` to run just the Playwright checks. They exercise all three case states from disk with networking disabled, repeat the checks after moving the app, and verify scoring with a temporary 95/5 XML variant. See the [Phase 1 validation record](dev-docs/2026-11-21-prove-offline-path/validation.md).
+`npm test` runs both suites. Use `npm run test:offline` to run just the Playwright checks. They exercise all three case states from disk with networking disabled, repeat the checks after moving the app, and verify scoring with a temporary 95/5 XML variant. See the [Phase 1 validation record](dev-docs/specs/2026-11-21-prove-offline-path/validation.md).
 
 ## How it is meant to work
 
