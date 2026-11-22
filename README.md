@@ -6,7 +6,7 @@
 
 ## Status
 
-The first implementation builds a portable app for the synthetic six-week follow-up example. The full release requirements and project vocabulary are documented in the [user specification](dev-docs/user-specification.md) and [glossary](GLOSSARY.md).
+The current implementation builds portable apps from hand-authored XML for the synthetic six-week and multi-decision examples. Automated source discovery and the remaining release features are not yet implemented. The full release requirements and project vocabulary are documented in the [user specification](dev-docs/user-specification.md) and [glossary](GLOSSARY.md).
 
 ## Build the six-week follow-up example
 
@@ -19,11 +19,50 @@ npm run build
 
 Open `dist/index.html` directly in a browser. The folder contains the authoritative `model.xml` and the local `app.js` and `app.css` assets. You can move the whole folder and reopen `index.html` from its new location. Choose **Yes** for the synthetic Case Input to see the six-week guidance. The [synthetic source and cases](fixtures/six-week-follow-up/source.md) document the example.
 
-To build a copy with a different model or destination, pass the XML path and output folder in that order. See the [Decide XML schema](dev-docs/2026-11-21-prove-offline-path/xml-model.md) for the supported structure and validation rules.
+If the destination already exists, the build publishes to a separate suffixed
+folder and prints the actual `index.html` path. Add `--replace` after the model
+and output arguments to replace an existing Decide build. Replacement checks the
+`.decide-build` marker against the core app files. For older builds without a
+marker or builds with modified core files, use a suffixed or new destination.
+Builds are staged before publication, so validation or generation failures
+leave the previous output untouched.
+
+To build a copy with a different model or destination, pass the XML path and output folder in that order. See the [Decide XML schema](dev-docs/specs/2026-11-21-prove-offline-path/xml-model.md) for the supported structure and validation rules.
 
 ```sh
 npm run build -- fixtures/six-week-follow-up/model.xml path/to/output
 ```
+
+## Build the mixed multi-decision example
+
+From the repository root, after `npm ci`, run:
+
+```sh
+npm run build -- fixtures/mixed-decisions/model.xml path/to/output \
+  --inventory fixtures/mixed-decisions/inventory.json \
+  --cases fixtures/mixed-decisions/cases.json
+```
+
+Open the printed `index.html` directly, including after moving the entire output
+folder. The build ships the original XML, local app assets, and two separate
+reports:
+
+- `coverage-report.md` reconciles the source inventory, distinguishing
+  verified and delivered decisions, modeled but excluded decisions, unresolved
+  decisions, and unreadable or unprocessed sections. The app is marked partial
+  when coverage is incomplete.
+- `test-report.md` records build-time synthetic verification by modeled
+  decision, including expected and actual results for failures. It does not
+  claim browser tests ran or establish source coverage.
+
+The fixture intentionally fails an equipment verification case, leaving that
+decision out of the app; it also has an unresolved decision and an unprocessed
+section. The other three decisions verify. A version 2 build requires `--cases`;
+`--inventory` supplies source coverage and the separate reports. If no decision
+verifies, no app is published. See the [input contract](dev-docs/specs/2026-11-22-verify-multi-decision-builds/inputs.md)
+for model and case requirements.
+
+The same rerun and replacement rules apply as for the six-week build.
 
 ## Run the tests
 
@@ -35,7 +74,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs both suites. Use `npm run test:offline` to run just the Playwright checks. They exercise all three case states from disk with networking disabled, repeat the checks after moving the app, and verify scoring with a temporary 95/5 XML variant. See the [Phase 1 validation record](dev-docs/2026-11-21-prove-offline-path/validation.md).
+`npm test` runs both suites. Use `npm run test:offline` to run just the Playwright checks. They exercise case states, routing, and numeric thresholds from disk with networking disabled, repeat checks after moving the app, and verify scoring with a temporary 95/5 XML variant. See the [Phase 1 validation record](dev-docs/specs/2026-11-21-prove-offline-path/validation.md) and [Phase 2 validation record](dev-docs/specs/2026-11-22-verify-multi-decision-builds/validation.md).
 
 ## How it is meant to work
 

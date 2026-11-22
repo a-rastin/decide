@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "source": "source.md",
+  "decisions": [
+    { "id": "routine-review", "section": "§1", "status": "modeled" },
+    { "id": "information-pack", "section": "§1", "status": "modeled" },
+    { "id": "repeat-marker", "section": "§2", "status": "modeled" },
+    { "id": "inspect-equipment", "section": "§3", "status": "modeled" },
+    { "id": "later-review-date", "section": "§4", "status": "unresolved", "reason": "The source gives no basis for choosing a date." }
+  ],
+  "sections": [
+    { "id": "appendix", "section": "§5", "status": "unprocessed", "reason": "The appendix is intentionally not processed." }
+  ]
+}

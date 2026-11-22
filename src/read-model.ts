@@ -1,5 +1,5 @@
 import { SaxesParser } from "saxes";
-import { caseValueDisplayLabel, type DecideModel } from "./model.ts";
+import { caseValueDisplayLabel, decimalLiteral, type DecideModel, type MultiModel } from "./model.ts";
 
 interface XmlElement {
   name: string;
@@ -141,7 +141,10 @@ function parseXml(xml: Uint8Array): XmlElement {
 }
 
 export function readModel(xml: Uint8Array): DecideModel {
-  const root = parseXml(xml);
+  return readSingleModel(parseXml(xml));
+}
+
+function readSingleModel(root: XmlElement): DecideModel {
   if (root.name !== "decide-model") {
     throw new Error('Expected an unqualified <decide-model> root element');
   }
@@ -151,7 +154,13 @@ export function readModel(xml: Uint8Array): DecideModel {
 
   const caseInput = child(root, "case-input");
   validateElement(caseInput, ["id", "label"], ["value"]);
-  const input = labeledValue(caseInput);
+  const input = { ...labeledValue(caseInput), values: readCaseValues(caseInput) };
+  const decision = child(root, "clinical-decision");
+  validateElement(decision, ["title"], ["applicability", "action-distribution"]);
+  return readDecision(decision, new Map([[input.id, input]]));
+}
+
+function readCaseValues(caseInput: XmlElement) {
   const values = alternatives(caseInput, "value").map((element) => {
     validateElement(element, ["id", "label"]);
     return labeledValue(element);
@@ -167,22 +176,48 @@ export function readModel(xml: Uint8Array): DecideModel {
     }
     labelIds.set(labelKey, id);
   }
+  return values;
+}
 
-  const decision = child(root, "clinical-decision");
-  validateElement(decision, ["title"], ["applicability", "action-distribution"]);
+function readDecision(decision: XmlElement, inputs: ReadonlyMap<string, DecideModel["caseInput"]>): DecideModel {
   const title = attribute(decision, "title");
   const applicability = child(decision, "applicability");
-  validateElement(applicability, ["input", "value"], ["source-condition", "citation"]);
   const inputId = attribute(applicability, "input");
-  if (inputId !== input.id) throw new Error(`<applicability> references unknown Case Input "${inputId}"`);
-  const value = attribute(applicability, "value");
-  if (!values.some((option) => option.id === value)) {
-    throw new Error(`<applicability> references unknown value "${value}" for Case Input "${inputId}"`);
-  }
-  const condition = text(applicability, "source-condition");
-  const citation = text(applicability, "citation");
+  const input = inputs.get(inputId);
+  if (!input) throw new Error(`<applicability> references unknown Case Input "${inputId}"`);
+  return {
+    caseInput: input,
+    decision: {
+      title,
+      applicability: readApplicability(applicability, input),
+      distribution: readDistribution(child(decision, "action-distribution")),
+    },
+  };
+}
 
-  const distribution = child(decision, "action-distribution");
+function readApplicability(element: XmlElement, input: DecideModel["caseInput"]): DecideModel["decision"]["applicability"] {
+  const content = ["source-condition", "citation"];
+  if ("type" in input) {
+    validateElement(element, ["input", "operator", "threshold"], content);
+    const operator = attribute(element, "operator");
+    const threshold = attribute(element, "threshold").trim();
+    if (operator !== "lt" && operator !== "lte" && operator !== "gt" && operator !== "gte") {
+      throw new Error(`Invalid numeric operator "${operator}"`);
+    }
+    if (!decimalLiteral.test(threshold)) {
+      throw new Error(`Invalid numeric threshold "${threshold}"`);
+    }
+    return { operator, threshold, condition: text(element, "source-condition"), citation: text(element, "citation") };
+  }
+  validateElement(element, ["input", "value"], content);
+  const value = attribute(element, "value");
+  if (!input.values.some((option) => option.id === value)) {
+    throw new Error(`<applicability> references unknown value "${value}" for Case Input "${input.id}"`);
+  }
+  return { value, condition: text(element, "source-condition"), citation: text(element, "citation") };
+}
+
+function readDistribution(distribution: XmlElement): DecideModel["decision"]["distribution"] {
   validateElement(distribution, ["guidance"], ["research-modeling-convention", "action"]);
   const convention = text(distribution, "research-modeling-convention");
   const actions = alternatives(distribution, "action").map((element) => {
@@ -199,12 +234,43 @@ export function readModel(xml: Uint8Array): DecideModel {
   const guidance = actions.find((action) => action.id === guidanceId);
   if (!guidance) throw new Error(`Unknown guidance action "${guidanceId}"`);
 
-  return {
-    caseInput: { ...input, values },
-    decision: {
-      title,
-      applicability: { value, condition, citation },
-      distribution: { convention, guidance },
-    },
-  };
+  return { convention, guidance };
+}
+
+export function readBuildModel(xml: Uint8Array): DecideModel | MultiModel {
+  const root = parseXml(xml);
+  if (root.name !== "decide-model" || root.attributes.version !== "2") return readSingleModel(root);
+  validateElement(root, ["version"], ["case-input", "route"]);
+  const inputs = childrenNamed(root, "case-input");
+  const routeElements = childrenNamed(root, "route");
+  if (!inputs.length || !routeElements.length) throw new Error("Version 2 requires Case Inputs and routes");
+  const parsedInputs = inputs.map((input): DecideModel["caseInput"] => {
+    validateElement(input, ["id", "label", "type", "unit"], ["value"]);
+    const type = attribute(input, "type");
+    const info = labeledValue(input);
+    if (type === "numeric") {
+      const unit = attribute(input, "unit");
+      if (input.children.length) throw new Error("Numeric Case Input must not contain values");
+      return { ...info, type, unit };
+    }
+    if (type !== "categorical") throw new Error(`Unsupported Case Input type "${type}"`);
+    if ("unit" in input.attributes) throw new Error("Categorical Case Input must not declare a unit");
+    return { ...info, values: readCaseValues(input) };
+  });
+  validateUniqueIds(parsedInputs, "case-input");
+  const inputsById = new Map(parsedInputs.map((input) => [input.id, input]));
+  const routes = routeElements.map((route) => {
+    validateElement(route, ["id", "label"], ["clinical-decision"]);
+    const routeInfo = labeledValue(route);
+    const decisionElements = childrenNamed(route, "clinical-decision");
+    if (!decisionElements.length) throw new Error(`Route "${routeInfo.id}" has no Clinical Decisions`);
+    const decisions = decisionElements.map((decision) => {
+      validateElement(decision, ["id", "title"], ["applicability", "action-distribution"]);
+      return { id: attribute(decision, "id"), ...readDecision(decision, inputsById) };
+    });
+    return { ...routeInfo, decisions };
+  });
+  validateUniqueIds(routes, "route");
+  validateUniqueIds(routes.flatMap((route) => route.decisions), "clinical-decision");
+  return { version: 2, routes };
 }

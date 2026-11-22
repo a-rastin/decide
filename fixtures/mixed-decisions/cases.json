@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "cases": [
+    { "id": "review-yes", "decision": "routine-review", "inputs": { "initial-checklist": "yes" }, "expected": { "state": "applicable", "guidance": "schedule", "score": 0.1 } },
+    { "id": "review-no", "decision": "routine-review", "inputs": { "initial-checklist": "no" }, "expected": { "state": "unmet" } },
+    { "id": "review-missing", "decision": "routine-review", "inputs": {}, "expected": { "state": "missing" } },
+    { "id": "pack-yes", "decision": "information-pack", "inputs": { "initial-checklist": "yes" }, "expected": { "state": "applicable", "guidance": "offer", "score": 0.2 } },
+    { "id": "pack-no", "decision": "information-pack", "inputs": { "initial-checklist": "no" }, "expected": { "state": "unmet" } },
+    { "id": "pack-missing", "decision": "information-pack", "inputs": {}, "expected": { "state": "missing" } },
+    { "id": "marker-below", "decision": "repeat-marker", "inputs": { "marker": 9.99 }, "expected": { "state": "unmet" } },
+    { "id": "marker-boundary", "decision": "repeat-marker", "inputs": { "marker": 10 }, "expected": { "state": "applicable", "guidance": "repeat", "score": 0.05 } },
+    { "id": "marker-above", "decision": "repeat-marker", "inputs": { "marker": 10.01 }, "expected": { "state": "applicable", "guidance": "repeat", "score": 0.05 } },
+    { "id": "marker-missing", "decision": "repeat-marker", "inputs": {}, "expected": { "state": "missing" } },
+    { "id": "equipment-yes-deliberate-mismatch", "decision": "inspect-equipment", "inputs": { "equipment-checklist": "yes" }, "expected": { "state": "applicable", "guidance": "inspect", "score": 0.2 } },
+    { "id": "equipment-no", "decision": "inspect-equipment", "inputs": { "equipment-checklist": "no" }, "expected": { "state": "unmet" } },
+    { "id": "equipment-missing", "decision": "inspect-equipment", "inputs": {}, "expected": { "state": "missing" } }
+  ]
+}

@@ -3,13 +3,21 @@ import { join, resolve } from "node:path";
 import tailwindcss from "@tailwindcss/postcss";
 import { build } from "esbuild";
 import postcss from "postcss";
-import { readModel } from "./read-model.ts";
+import { readBuildModel } from "./read-model.ts";
+import { verifyCases } from "./verify-cases.ts";
+import { createReports } from "./reports.ts";
+import { publishBuild } from "./publish-build.ts";
 
-async function generateApp(modelPath: string, outputPath: string) {
+async function generateApp(modelPath: string, outputPath: string, casesPath?: string, inventoryPath?: string) {
   const project = resolve(import.meta.dirname, "..");
   const app = join(project, "src", "app");
   const xml = await readFile(modelPath);
-  const model = readModel(xml);
+  const parsed = readBuildModel(xml);
+  if ("version" in parsed && !casesPath) throw new Error("Version 2 requires --cases for verification");
+  if (!("version" in parsed) && inventoryPath) throw new Error("--inventory requires a version 2 model");
+  const verification = "version" in parsed ? verifyCases(parsed, await readFile(casesPath!, "utf8")) : undefined;
+  const reports = "version" in parsed && inventoryPath ? createReports(parsed, await readFile(inventoryPath, "utf8"), verification!) : undefined;
+  const model = verification ? { ...verification.model, partial: reports?.partial ?? (verification.results.size !== verification.model.routes.flatMap((route) => route.decisions).length) } : parsed;
   const stylesheet = join(app, "app.css");
   const [bundle, css, html] = await Promise.all([
     build({
@@ -33,13 +41,31 @@ async function generateApp(modelPath: string, outputPath: string) {
     writeFile(join(outputPath, "model.xml"), xml),
     writeFile(join(outputPath, "app.js"), bundle.outputFiles[0].contents),
     writeFile(join(outputPath, "app.css"), css.css),
+    ...(reports ? [
+      writeFile(join(outputPath, "coverage-report.md"), reports.coverage),
+      writeFile(join(outputPath, "test-report.md"), reports.tests),
+    ] : []),
   ]);
 }
 
-const [modelPath = "fixtures/six-week-follow-up/model.xml", outputPath = "dist"] = process.argv.slice(2);
+const [modelPath = "fixtures/six-week-follow-up/model.xml", outputPath = "dist", ...options] = process.argv.slice(2);
 try {
-  await generateApp(modelPath, outputPath);
-  console.log(`Generated ${resolve(outputPath, "index.html")}`);
+  const paths: Record<string, string> = {};
+  let replace = false;
+  for (let i = 0; i < options.length; i++) {
+    const option = options[i];
+    if (option === "--replace" && !replace) {
+      replace = true;
+      continue;
+    }
+    const value = options[++i];
+    if (!["--cases", "--inventory"].includes(option) || !value || value.startsWith("--") || paths[option]) throw new Error("Expected --cases <path>, optional --inventory <path>, and optional --replace");
+    paths[option] = value;
+  }
+  const published = await publishBuild(outputPath, replace, (stage) =>
+    generateApp(modelPath, stage, paths["--cases"], paths["--inventory"]),
+  );
+  console.log(`Generated ${join(published, "index.html")}`);
 } catch (error) {
   console.error(`Build failed for ${modelPath}: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;

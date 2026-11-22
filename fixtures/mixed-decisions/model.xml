@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<decide-model version="2">
+  <case-input id="initial-checklist" label="Is the checklist complete?" type="categorical">
+    <value id="yes" label="Yes" />
+    <value id="no" label="No" />
+  </case-input>
+  <case-input id="marker" label="Synthetic marker" type="numeric" unit="units" />
+  <case-input id="equipment-checklist" label="Is the checklist complete?" type="categorical">
+    <value id="yes" label="Yes" />
+    <value id="no" label="No" />
+  </case-input>
+  <route id="readiness" label="Readiness">
+    <clinical-decision id="routine-review" title="Routine review">
+      <applicability input="initial-checklist" value="yes">
+        <source-condition>The initial checklist is complete.</source-condition>
+        <citation>Synthetic Monitoring Note §1</citation>
+      </applicability>
+      <action-distribution guidance="schedule">
+        <research-modeling-convention>The explicit action receives 90% modeled support; deferring receives the remainder.</research-modeling-convention>
+        <action id="schedule" label="Schedule a routine review" probability="0.9" />
+        <action id="defer" label="Defer the decision" probability="0.1" />
+      </action-distribution>
+    </clinical-decision>
+    <clinical-decision id="information-pack" title="Information pack">
+      <applicability input="initial-checklist" value="yes">
+        <source-condition>The initial checklist is complete.</source-condition>
+        <citation>Synthetic Monitoring Note §1</citation>
+      </applicability>
+      <action-distribution guidance="offer">
+        <research-modeling-convention>The explicit action receives 80% modeled support; deferring receives the remainder.</research-modeling-convention>
+        <action id="offer" label="Offer the information pack" probability="0.8" />
+        <action id="defer" label="Defer the decision" probability="0.2" />
+      </action-distribution>
+    </clinical-decision>
+  </route>
+  <route id="monitoring" label="Monitoring">
+    <clinical-decision id="repeat-marker" title="Marker check">
+      <applicability input="marker" operator="gte" threshold="10">
+        <source-condition>The synthetic marker is at least 10 units.</source-condition>
+        <citation>Synthetic Monitoring Note §2</citation>
+      </applicability>
+      <action-distribution guidance="repeat">
+        <research-modeling-convention>The explicit action receives 95% modeled support; deferring receives the remainder.</research-modeling-convention>
+        <action id="repeat" label="Repeat the marker check" probability="0.95" />
+        <action id="defer" label="Defer the decision" probability="0.05" />
+      </action-distribution>
+    </clinical-decision>
+    <clinical-decision id="inspect-equipment" title="Equipment inspection">
+      <applicability input="equipment-checklist" value="yes">
+        <source-condition>The equipment checklist is complete.</source-condition>
+        <citation>Synthetic Monitoring Note §3</citation>
+      </applicability>
+      <action-distribution guidance="inspect">
+        <research-modeling-convention>The explicit action receives 90% modeled support; deferring receives the remainder.</research-modeling-convention>
+        <action id="inspect" label="Inspect the equipment" probability="0.9" />
+        <action id="defer" label="Defer the decision" probability="0.1" />
+      </action-distribution>
+    </clinical-decision>
+  </route>
+</decide-model>

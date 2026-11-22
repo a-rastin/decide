@@ -35,8 +35,8 @@ async function expectBuildRejection(
 }
 
 test("rejects an unsupported Decide XML schema version", async (context) => {
-  await expectBuildRejection(context, '<decide-model version="1">', '<decide-model version="2">',
-    /unsupported Decide XML schema version "2".+expected "1"/i);
+  await expectBuildRejection(context, '<decide-model version="1">', '<decide-model version="99">',
+    /unsupported Decide XML schema version "99".+expected "1"/i);
 });
 
 test("rejects malformed model XML with unquoted attributes", async (context) => {
@@ -64,6 +64,86 @@ test("accepts model XML with one leading UTF-8 byte-order mark", async (context)
   expect(await readFile(join(output, "model.xml"), "utf8")).toBe(xml);
 });
 
+test("builds a categorical v2 model only when synthetic cases verify its decisions", async (context) => {
+  const directory = await createBuildDirectory(context);
+  const model = join(directory, "model.xml");
+  const cases = join(directory, "cases.json");
+  const output = join(directory, "app");
+  const mixed = await readFile("fixtures/mixed-decisions/model.xml", "utf8");
+  const xml = mixed
+    .replace(/  <case-input id="marker".*\/>\n/, "")
+    .replace(/    <clinical-decision id="repeat-marker"[\s\S]*?    <\/clinical-decision>\n/, "");
+  const mixedCases = JSON.parse(await readFile("fixtures/mixed-decisions/cases.json", "utf8"));
+  await writeFile(model, xml);
+  await writeFile(cases, JSON.stringify({ version: 1, cases: mixedCases.cases.filter((c: { decision: string }) => c.decision !== "repeat-marker") }));
+
+  const run = buildApp(model, output, ["--cases", cases]);
+  expect(run.status, run.stderr).toBe(0);
+  expect(await readFile(join(output, "model.xml"), "utf8")).toBe(xml);
+});
+
+test("builds numeric decisions and rejects invalid numeric definitions before publication", async (context) => {
+  const directory = await createBuildDirectory(context);
+  const model = join(directory, "model.xml");
+  const xml = await readFile("fixtures/mixed-decisions/model.xml", "utf8");
+  await writeFile(model, xml);
+  const run = buildApp(model, join(directory, "valid"), ["--cases", "fixtures/mixed-decisions/cases.json"]);
+  expect(run.status, run.stderr).toBe(0);
+  for (const replacement of ['operator="bad" threshold="10"', 'operator="gte" threshold="NaN"', 'value="yes"']) {
+    await writeFile(model, xml.replace('operator="gte" threshold="10"', replacement));
+    const invalid = buildApp(model, join(directory, "invalid"), ["--cases", "fixtures/mixed-decisions/cases.json"]);
+    expect(invalid.status).not.toBe(0);
+    await expect(stat(join(directory, "invalid"))).rejects.toHaveProperty("code", "ENOENT");
+  }
+}, 30000);
+
+test("verifies finite decimal thresholds outside JavaScript's number range", async (context) => {
+  const directory = await createBuildDirectory(context);
+  const model = join(directory, "model.xml");
+  const cases = join(directory, "cases.json");
+  const output = join(directory, "app");
+  const xml = await readFile("fixtures/mixed-decisions/model.xml", "utf8");
+  const sourceCases = await readFile("fixtures/mixed-decisions/cases.json", "utf8");
+  await writeFile(model, xml.replace('threshold="10"', 'threshold="1e309"'));
+  await writeFile(cases, sourceCases
+    .replace('"marker": 9.99', '"marker": 9.99e308')
+    .replace('"marker": 10 }', '"marker": 1e309 }')
+    .replace('"marker": 10.01', '"marker": 1.001e309'));
+  const run = buildApp(model, output, ["--cases", cases, "--inventory", "fixtures/mixed-decisions/inventory.json"]);
+  expect(run.status, run.stderr).toBe(0);
+  expect(await readFile(join(output, "coverage-report.md"), "utf8")).toMatch(/repeat-marker.*verified and delivered/);
+});
+
+test("refuses to publish v2 without verification cases", async (context) => {
+  const directory = await createBuildDirectory(context);
+  const model = join(directory, "model.xml");
+  const output = join(directory, "app");
+  const xml = (await readFile("fixtures/mixed-decisions/model.xml", "utf8"))
+    .replace(/  <case-input id="marker".*\/>\n/, "")
+    .replace(/    <clinical-decision id="repeat-marker"[\s\S]*?    <\/clinical-decision>\n/, "");
+  await writeFile(model, xml);
+  const run = buildApp(model, output);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(/requires --cases/i);
+  await expect(stat(output)).rejects.toHaveProperty("code", "ENOENT");
+});
+
+test("refuses to publish when no categorical decision has sufficient verification", async (context) => {
+  const directory = await createBuildDirectory(context);
+  const model = join(directory, "model.xml");
+  const cases = join(directory, "cases.json");
+  const output = join(directory, "app");
+  const xml = (await readFile("fixtures/mixed-decisions/model.xml", "utf8"))
+    .replace(/  <case-input id="marker".*\/>\n/, "")
+    .replace(/    <clinical-decision id="repeat-marker"[\s\S]*?    <\/clinical-decision>\n/, "");
+  await writeFile(model, xml);
+  await writeFile(cases, JSON.stringify({ version: 1, cases: [] }));
+  const run = buildApp(model, output, ["--cases", cases]);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(/no verified decisions.*routine-review.*information-pack.*inspect-equipment/i);
+  await expect(stat(output)).rejects.toHaveProperty("code", "ENOENT");
+});
+
 test("rejects structurally invalid model XML with duplicate applicability elements", async (context) => {
   await expectBuildRejection(context, '</applicability>', '</applicability><applicability />',
     /expected exactly one <applicability> in <clinical-decision>.*found 2/i);
@@ -81,6 +161,23 @@ test("rejects an applicability reference to an unknown Case Input value", async 
 test("rejects ambiguous Case Input value labels", async (context) => {
   await expectBuildRejection(context, 'label="No"', 'label="Yes"',
     /duplicate Case Input display label "Yes".*"yes" and "no"/i);
+});
+
+test("reports both colliding value IDs even when a v2 Case Input is unused", async (context) => {
+  const directory = await createBuildDirectory(context);
+  const model = join(directory, "invalid.xml");
+  const output = join(directory, "app");
+  const xml = await readFile("fixtures/mixed-decisions/model.xml", "utf8");
+  await writeFile(model, xml.replace("</decide-model>", `
+    <case-input id="unused" label="Unused" type="categorical">
+      <value id="first" label="Same" />
+      <value id="second" label=" same " />
+    </case-input>
+  </decide-model>`));
+  const run = buildApp(model, output, ["--cases", "fixtures/mixed-decisions/cases.json"]);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(/duplicate Case Input display label .*"first" and "second"/i);
+  await expect(stat(output)).rejects.toHaveProperty("code", "ENOENT");
 });
 
 test("rejects canonically equivalent Case Input value labels", async (context) => {
