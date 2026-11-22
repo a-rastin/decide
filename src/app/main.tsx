@@ -127,7 +127,8 @@ function Root({ model }: { model: DecideModel | MultiModel }) {
   const current = "version" in model ? single ?? selected : model;
   const navigation = "version" in model && !single ? (
     <section className="mb-8 space-y-6 rounded-2xl border border-slate-200 bg-white p-6">
-      <p>Only verified decisions are available. This build may be partial.</p>
+      <p>Only verified decisions are available.</p>
+      {model.partial && <p>Partial build: some decisions or source sections are not included.</p>}
       <RadioGroup name="route" value={routeId} onChange={(value) => { setRouteId(value); setDecisionId(""); }}>
         <Label>Choose a topic or scenario</Label>
         {model.routes.map((entry) => (
@@ -143,7 +144,8 @@ function Root({ model }: { model: DecideModel | MultiModel }) {
         </RadioGroup>
       )}
     </section>
-  ) : single ? <p className="mb-6">Only verified decisions are available. This build may be partial.</p> : undefined;
+  ) : single ? <section className="mb-6"><p>Only verified decisions are available.</p>
+    {"version" in model && model.partial && <p>Partial build: some decisions or source sections are not included.</p>}</section> : undefined;
   if (!current) return (
     <>
       <header className="border-b border-slate-200 bg-white p-6">Decide — Research only. Do not use for clinical care.</header>

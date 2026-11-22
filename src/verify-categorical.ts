@@ -5,12 +5,12 @@ function object(value: unknown, description: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-export function verifyCategorical(model: MultiModel, content: string): MultiModel {
+export function verifyCategorical(model: MultiModel, content: string) {
   const data = object(JSON.parse(content), "verification cases");
   if (data.version !== 1 || !Array.isArray(data.cases)) throw new Error("Invalid verification cases version or cases");
   const decisions = model.routes.flatMap((route) => route.decisions);
   const ids = new Set<string>();
-  const results = new Map(decisions.map(({ id }) => [id, { failed: false, states: new Set<string>(), boundaries: new Set<number>() }]));
+  const results = new Map(decisions.map(({ id }) => [id, { failures: [] as string[], checks: [] as string[], states: new Set<string>(), boundaries: new Set<number>() }]));
   for (const raw of data.cases) {
     const entry = object(raw, "verification case");
     if (typeof entry.id !== "string" || !entry.id.trim() || ids.has(entry.id)) throw new Error("Invalid or duplicate verification case id");
@@ -38,19 +38,32 @@ export function verifyCategorical(model: MultiModel, content: string): MultiMode
     if (numeric && value !== undefined && "operator" in decision.decision.applicability) {
       outcome.boundaries.add(compareDecimals(String(value), decision.decision.applicability.threshold));
     }
+    const actualResult = actual.status === "applicable"
+      ? { state: actual.status, guidance: decision.decision.distribution.guidance.id, score: actual.doNotConsiderScore }
+      : { state: actual.status };
     if (actual.status !== expected.state || (actual.status === "applicable" &&
       (decision.decision.distribution.guidance.id !== expected.guidance || Math.abs(actual.doNotConsiderScore - (expected.score as number)) > 1e-12))) {
-      outcome.failed = true;
+      outcome.failures.push(`Case ${entry.id}: expected ${JSON.stringify(expected)}; actual ${JSON.stringify(actualResult)}`);
+    } else outcome.checks.push(`Case ${entry.id}: passed`);
+  }
+  for (const { id, caseInput } of decisions) {
+    const result = results.get(id)!;
+    for (const state of ["applicable", "unmet", "missing"]) {
+      if (!result.states.has(state)) result.failures.push(`Insufficient coverage: missing ${state} case`);
+    }
+    if ("type" in caseInput) {
+      for (const [boundary, label] of [[-1, "below"], [0, "at"], [1, "above"]] as const) {
+        if (!result.boundaries.has(boundary)) result.failures.push(`Insufficient coverage: missing case ${label} threshold`);
+      }
     }
   }
   const routes = model.routes.map((route) => ({
     ...route,
-    decisions: route.decisions.filter(({ id, caseInput }) => {
+    decisions: route.decisions.filter(({ id }) => {
       const result = results.get(id)!;
-      return !result.failed && ["applicable", "unmet", "missing"].every((state) => result.states.has(state))
-        && (!("type" in caseInput) || [-1, 0, 1].every((boundary) => result.boundaries.has(boundary)));
+      return !result.failures.length;
     }),
   })).filter((route) => route.decisions.length);
-  if (!routes.length) throw new Error(`No verified decisions: ${decisions.map(({ id }) => id).join(", ")}`);
-  return { version: 2, routes };
+  if (!routes.length) throw new Error(`No verified decisions: ${decisions.map(({ id }) => `${id}: ${results.get(id)!.failures.join("; ")}`).join("; ")}`);
+  return { model: { version: 2 as const, routes }, results };
 }

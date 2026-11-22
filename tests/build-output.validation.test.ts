@@ -6,6 +6,76 @@ import { buildApp } from "./build-app.ts";
 
 const fixture = "fixtures/six-week-follow-up/model.xml";
 
+test("mixed build reports verification and source coverage separately", async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), "decide-reports-"));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const output = join(directory, "app");
+  const run = buildApp("fixtures/mixed-decisions/model.xml", output, [
+    "--inventory", "fixtures/mixed-decisions/inventory.json",
+    "--cases", "fixtures/mixed-decisions/cases.json",
+  ]);
+  expect(run.status, run.stderr).toBe(0);
+  const coverage = await readFile(join(output, "coverage-report.md"), "utf8");
+  const tests = await readFile(join(output, "test-report.md"), "utf8");
+  expect(coverage).toMatch(/partial/i);
+  expect(coverage).toMatch(/routine-review.*delivered/i);
+  expect(coverage).toMatch(/inspect-equipment.*excluded/i);
+  expect(coverage).toMatch(/later-review-date.*unresolved/i);
+  expect(coverage).toMatch(/appendix.*unprocessed/i);
+  expect(tests).toContain("equipment-yes-deliberate-mismatch");
+  expect(tests).toMatch(/expected.*0\.2/i);
+  expect(tests).toMatch(/actual.*0\.09999999999999998/i);
+  expect(tests).toMatch(/browser.*not run/i);
+  expect(await readFile(join(output, "model.xml"))).toEqual(await readFile("fixtures/mixed-decisions/model.xml"));
+});
+
+test("fully verified and inventoried decisions produce a complete coverage report", async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), "decide-complete-"));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const cases = JSON.parse(await readFile("fixtures/mixed-decisions/cases.json", "utf8"));
+  cases.cases.find((entry: { id: string }) => entry.id === "equipment-yes-deliberate-mismatch").expected.score = 0.1;
+  const inventory = JSON.parse(await readFile("fixtures/mixed-decisions/inventory.json", "utf8"));
+  inventory.decisions = inventory.decisions.filter((entry: { status: string }) => entry.status === "modeled");
+  inventory.sections = [];
+  const casesPath = join(directory, "cases.json"), inventoryPath = join(directory, "inventory.json");
+  await writeFile(casesPath, JSON.stringify(cases));
+  await writeFile(inventoryPath, JSON.stringify(inventory));
+  const output = join(directory, "app");
+  const run = buildApp("fixtures/mixed-decisions/model.xml", output, ["--cases", casesPath, "--inventory", inventoryPath]);
+  expect(run.status, run.stderr).toBe(0);
+  expect(await readFile(join(output, "coverage-report.md"), "utf8")).toContain("Build status: complete");
+  inventory.sections = [{ id: "appendix", section: "§5", status: "unreadable", reason: "Illegible." }];
+  await writeFile(inventoryPath, JSON.stringify(inventory));
+  const partialOutput = join(directory, "partial");
+  const partialRun = buildApp("fixtures/mixed-decisions/model.xml", partialOutput, ["--cases", casesPath, "--inventory", inventoryPath]);
+  expect(partialRun.status, partialRun.stderr).toBe(0);
+  expect(await readFile(join(partialOutput, "coverage-report.md"), "utf8")).toMatch(/Build status: partial[\s\S]*appendix.*unreadable/);
+}, 20000);
+
+test("rejects an inventory that omits a modeled Clinical Decision", async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), "decide-inventory-"));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const inventory = JSON.parse(await readFile("fixtures/mixed-decisions/inventory.json", "utf8"));
+  inventory.decisions = inventory.decisions.filter((entry: { id: string }) => entry.id !== "repeat-marker");
+  const inventoryPath = join(directory, "inventory.json"), output = join(directory, "app");
+  await writeFile(inventoryPath, JSON.stringify(inventory));
+  const run = buildApp("fixtures/mixed-decisions/model.xml", output, ["--inventory", inventoryPath, "--cases", "fixtures/mixed-decisions/cases.json"]);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(/repeat-marker.*missing from inventory/);
+  await expect(readdir(output)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test("insufficient verification of all decisions publishes no app and identifies decisions", async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), "decide-unverified-"));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const casesPath = join(directory, "cases.json"), output = join(directory, "app");
+  await writeFile(casesPath, JSON.stringify({ version: 1, cases: [] }));
+  const run = buildApp("fixtures/mixed-decisions/model.xml", output, ["--cases", casesPath, "--inventory", "fixtures/mixed-decisions/inventory.json"]);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(/No verified decisions.*routine-review.*missing applicable case/i);
+  await expect(readdir(output)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
 async function generateApp({ onTestFinished }: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "decide-build-output-"));
   onTestFinished(() => rm(directory, { recursive: true, force: true }));

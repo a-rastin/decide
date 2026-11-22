@@ -6,6 +6,27 @@ import { buildApp } from "./build-app.ts";
 
 const fixture = "fixtures/six-week-follow-up/model.xml";
 
+test("mixed build shows partial status and excludes failed guidance offline", async ({ browser }, testInfo) => {
+  const output = testInfo.outputPath("mixed");
+  const run = buildApp("fixtures/mixed-decisions/model.xml", output, [
+    "--inventory", "fixtures/mixed-decisions/inventory.json",
+    "--cases", "fixtures/mixed-decisions/cases.json",
+  ]);
+  expect(run.status, run.stderr).toBe(0);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    await expect(page.getByText("Partial build: some decisions or source sections are not included.")).toBeVisible();
+    await expect(page.getByText(/Research only/)).toBeVisible();
+    await page.getByText("Monitoring", { exact: true }).first().click();
+    await expect(page.getByText("Marker check", { exact: true })).toBeVisible();
+    await expect(page.getByText("Equipment inspection", { exact: true })).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
 function expectSuccessfulBuild(model: string, output: string) {
   const run = buildApp(model, output);
   expect(run.error).toBeUndefined();

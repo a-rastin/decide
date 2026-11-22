@@ -33,6 +33,7 @@ export interface DecideModel {
 
 export interface MultiModel {
   version: 2;
+  partial?: boolean;
   routes: { id: string; label: string; decisions: (DecideModel & { id: string })[] }[];
 }
 

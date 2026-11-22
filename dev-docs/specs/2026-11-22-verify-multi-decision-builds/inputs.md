@@ -1,8 +1,7 @@
 # Phase 2 input contract
 
-This is the contract for Phase 2. The current build supports categorical and
-numeric version 2 inputs with `--cases`; inventory reconciliation,
-reports and the full command below are not implemented yet. Version 1 and its
+This is the contract for Phase 2. The build supports categorical and numeric
+version 2 inputs with `--cases` and optional `--inventory`. Version 1 and its
 two positional arguments remain supported unchanged.
 
 For a version 2 model, run
@@ -11,7 +10,8 @@ Every delivered decision must pass independently authored applicable, unmet,
 and missing cases; numeric decisions also require cases below, at, and above
 the threshold. Failed or insufficiently tested decisions are excluded;
 if none pass, no app is published. Such a build may be partial and is not a
-substitute for the planned coverage and test reports.
+substitute for inventory reconciliation. Supply `--inventory` to generate the
+separate coverage and test reports and assess source coverage.
 
 ## Version 2 XML
 
@@ -84,10 +84,9 @@ the expected value. The other modeled decisions should verify. The unresolved
 decision has no cases. The unprocessed appendix makes the build partial
 independently of the unresolved and failed decisions.
 
-## Planned public invocation
+## Public invocation
 
-Once Phase 2 build support is implemented, the positional model and output
-arguments will be followed by explicit inventory and case options:
+The positional model and output arguments accept inventory and case options:
 
 ```sh
 npm run build -- fixtures/mixed-decisions/model.xml path/to/output \
@@ -95,11 +94,9 @@ npm run build -- fixtures/mixed-decisions/model.xml path/to/output \
   --cases fixtures/mixed-decisions/cases.json
 ```
 
-The paths are resolved from the working directory. The command will validate
-all inputs before generation, verify cases with the shared evaluator, and
+The paths are resolved from the working directory. The command validates
+the inputs before generation, verifies cases with the shared evaluator, and
 publish the original XML and separate coverage and test reports alongside
-verified guidance. Reruns will select a distinct destination by default;
-`--replace` will explicitly request replacement. The command will print the
-actual published entry point. Inventory reconciliation, reports, and safe
-rerun publication remain planned; the current `--cases` invocation validates
-and verifies categorical and numeric decisions.
+verified guidance. The test report covers build-time synthetic checks, not
+browser checks. Safe non-overwriting rerun publication and `--replace` remain
+planned; until then use a new output directory for each successful build.
