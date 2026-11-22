@@ -96,7 +96,8 @@ npm run build -- fixtures/mixed-decisions/model.xml path/to/output \
 
 The paths are resolved from the working directory. The command validates
 the inputs before generation, verifies cases with the shared evaluator, and
-publish the original XML and separate coverage and test reports alongside
+publishes the original XML and separate coverage and test reports alongside
 verified guidance. The test report covers build-time synthetic checks, not
-browser checks. Safe non-overwriting rerun publication and `--replace` remain
-planned; until then use a new output directory for each successful build.
+browser checks. A rerun targeting an existing path publishes to a distinct
+suffixed folder and prints its actual entry point. Add `--replace` to replace
+the requested output only after the new artifact has been staged successfully.

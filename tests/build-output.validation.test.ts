@@ -105,6 +105,56 @@ test("ships the original XML and local assets in the requested output folder", a
   expect(stylesheet.trim()).not.toBe("");
 });
 
+test("successful reruns publish separately and report the actual entry point", async (context) => {
+  const { directory, output } = await generateApp(context);
+  await writeFile(join(output, "keep.txt"), "previous build");
+  const files = (await readdir(output)).sort();
+  const original = await Promise.all(files.map((file) => readFile(join(output, file))));
+  const run = buildApp(fixture, output);
+  expect(run.status, run.stderr).toBe(0);
+  const entry = run.stdout.match(/Generated (.+index\.html)/)?.[1];
+  expect(entry).toBeDefined();
+  expect(entry).not.toBe(join(output, "index.html"));
+  expect(entry).toMatch(new RegExp(`^${directory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+  expect(await readFile(entry!, "utf8")).toContain("app.js");
+  expect((await readdir(output)).sort()).toEqual(files);
+  expect(await Promise.all(files.map((file) => readFile(join(output, file))))).toEqual(original);
+}, 20000);
+
+test("explicit replacement publishes the complete new build at the requested destination", async (context) => {
+  const { output } = await generateApp(context);
+  await writeFile(join(output, "keep.txt"), "old");
+  const run = buildApp("fixtures/mixed-decisions/model.xml", output, [
+    "--replace", "--cases", "fixtures/mixed-decisions/cases.json",
+    "--inventory", "fixtures/mixed-decisions/inventory.json",
+  ]);
+  expect(run.status, run.stderr).toBe(0);
+  expect(run.stdout).toContain(`Generated ${join(output, "index.html")}`);
+  await expect(readFile(join(output, "keep.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  expect(await readFile(join(output, "model.xml"))).toEqual(await readFile("fixtures/mixed-decisions/model.xml"));
+  expect(await readFile(join(output, "coverage-report.md"), "utf8")).toMatch(/partial/i);
+  expect(await readFile(join(output, "test-report.md"), "utf8")).toContain("equipment-yes-deliberate-mismatch");
+}, 20000);
+
+test("failed explicit replacements preserve the existing artifact and leave no staged build", async (context) => {
+  const { directory, output } = await generateApp(context);
+  const files = (await readdir(output)).sort();
+  const original = await Promise.all(files.map((file) => readFile(join(output, file))));
+  const invalid = join(directory, "invalid.xml");
+  const cases = join(directory, "empty-cases.json");
+  await writeFile(invalid, '<decide-model version="99" />');
+  await writeFile(cases, JSON.stringify({ version: 1, cases: [] }));
+  const invalidRun = buildApp(invalid, output, ["--replace"]);
+  expect(invalidRun.status).not.toBe(0);
+  expect(invalidRun.stderr).toMatch(/unsupported Decide XML schema version/i);
+  const unverified = buildApp("fixtures/mixed-decisions/model.xml", output, ["--replace", "--cases", cases]);
+  expect(unverified.status).not.toBe(0);
+  expect(unverified.stderr).toMatch(/no verified decisions/i);
+  expect((await readdir(output)).sort()).toEqual(files);
+  expect(await Promise.all(files.map((file) => readFile(join(output, file))))).toEqual(original);
+  expect((await readdir(directory)).sort()).toEqual(["empty-cases.json", "invalid.xml", "portable app"]);
+}, 20000);
+
 test("preserves an existing app when a rebuild rejects the supplied model", async (context) => {
   const { directory, output } = await generateApp(context);
   const files = (await readdir(output)).sort();

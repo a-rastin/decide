@@ -19,6 +19,12 @@ npm run build
 
 Open `dist/index.html` directly in a browser. The folder contains the authoritative `model.xml` and the local `app.js` and `app.css` assets. You can move the whole folder and reopen `index.html` from its new location. Choose **Yes** for the synthetic Case Input to see the six-week guidance. The [synthetic source and cases](fixtures/six-week-follow-up/source.md) document the example.
 
+If the destination already exists, the build publishes to a separate suffixed
+folder and prints the actual `index.html` path. Add `--replace` after the model
+and output arguments to explicitly replace the requested destination. Builds
+are staged before publication, so validation or generation failures leave the
+previous output untouched.
+
 To build a copy with a different model or destination, pass the XML path and output folder in that order. See the [Decide XML schema](dev-docs/specs/2026-11-21-prove-offline-path/xml-model.md) for the supported structure and validation rules.
 
 ```sh
