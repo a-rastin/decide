@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { beforeAll, expect, test } from "vitest";
-import { evaluateDecision, type DecideModel } from "../src/model.ts";
+import { evaluateDecision, inferPosterior, type DecideModel } from "../src/model.ts";
 import { readModel } from "../src/read-model.ts";
 
 let decision: DecideModel["decision"];
@@ -18,6 +18,31 @@ test("scores the six-week guidance when baseline checks are complete", () => {
     action: { id: "recheck", label: "Recheck at six weeks" },
     doNotConsiderScore: expect.closeTo(0.01, 10),
   });
+});
+
+test("marginalizes latent states to score the source-selected action given observed evidence", () => {
+  const network = [
+    { id: "latent", states: ["low", "high"], parents: [], rows: [{ when: [], probabilities: [0.6, 0.4] }] },
+    { id: "observation", states: ["negative", "positive"], parents: ["latent"], rows: [
+      { when: ["low"], probabilities: [0.8, 0.2] },
+      { when: ["high"], probabilities: [0.2, 0.8] },
+    ] },
+    { id: "action", states: ["selected", "other"], parents: ["latent"], rows: [
+      { when: ["low"], probabilities: [0.1, 0.9] },
+      { when: ["high"], probabilities: [0.7, 0.3] },
+    ] },
+  ];
+  // P(high | positive) = 8/11, hence P(selected | positive) = 59/110.
+  expect(inferPosterior(network, "action", "selected", { observation: "positive" })).toBeCloseTo(59 / 110, 12);
+  expect(inferPosterior(network, "action", "selected", { observation: "negative" })).toBeCloseTo(13 / 70, 12);
+});
+
+test("does not invent a posterior when observed evidence has zero probability", () => {
+  const network = [
+    { id: "observation", states: ["possible", "impossible"], parents: [], rows: [{ when: [], probabilities: [1, 0] }] },
+    { id: "action", states: ["selected", "other"], parents: [], rows: [{ when: [], probabilities: [0.4, 0.6] }] },
+  ];
+  expect(inferPosterior(network, "action", "selected", { observation: "impossible" })).toBeNull();
 });
 
 test("returns an unmet condition when baseline checks are incomplete", () => {

@@ -4,6 +4,39 @@ type CompetingAction = ActionReference & { probability: number };
 
 export const unknownCaseLabel = "Unknown";
 
+export interface NetworkNode {
+  id: string;
+  states: string[];
+  parents: string[];
+  rows: { when: string[]; probabilities: number[] }[];
+}
+
+/** Exact enumeration over a validated, topologically ordered network. */
+export function inferPosterior(
+  nodes: NetworkNode[], action: string, selected: string, evidence: Record<string, string>,
+): number | null {
+  const assignment: Record<string, string> = {};
+  let total = 0;
+  let selectedTotal = 0;
+  function visit(index: number, weight: number): void {
+    if (index === nodes.length) {
+      total += weight;
+      if (assignment[action] === selected) selectedTotal += weight;
+      return;
+    }
+    const node = nodes[index];
+    const row = node.rows.find(({ when }) => when.every((value, i) => assignment[node.parents[i]] === value))!;
+    node.states.forEach((state, i) => {
+      if (Object.hasOwn(evidence, node.id) && evidence[node.id] !== state) return;
+      assignment[node.id] = state;
+      visit(index + 1, weight * row.probabilities[i]);
+    });
+    delete assignment[node.id];
+  }
+  visit(0, 1);
+  return total === 0 ? null : selectedTotal / total;
+}
+
 export function caseValueDisplayLabel(label: string): string {
   return label.trim().toLowerCase() === unknownCaseLabel.toLowerCase() ? `${label} (modeled value)` : label;
 }
