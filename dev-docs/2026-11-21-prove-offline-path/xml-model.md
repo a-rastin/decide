@@ -1,6 +1,6 @@
 # Decide XML schema version 1
 
-Phase 1 models one Clinical Decision and one categorical Case Input. The [six-week follow-up fixture](../../fixtures/six-week-follow-up/model.xml) is a complete example. The build accepts well-formed UTF-8 XML with an unqualified `<decide-model version="1">` root. Omit namespaces and `DOCTYPE` declarations. An XML declaration is optional. If it specifies an encoding, use `UTF-8`.
+Phase 1 models one Clinical Decision and one categorical Case Input. The [six-week follow-up fixture](../../fixtures/six-week-follow-up/model.xml) is a complete example. The build accepts well-formed UTF-8 XML with an unqualified `<decide-model version="1">` root and at most one leading UTF-8 byte-order mark. Omit namespaces and `DOCTYPE` declarations. An XML declaration is optional. If it specifies an encoding, use `UTF-8`.
 
 | Element | Required attributes | Content |
 | --- | --- | --- |
@@ -17,6 +17,8 @@ Phase 1 models one Clinical Decision and one categorical Case Input. The [six-we
 Use only the listed attributes and children. Required attributes must be nonblank. Elements may appear in any order within their parent, and `value` order determines display order. Comments and formatting whitespace are allowed. Text fields may contain character data or CDATA.
 
 The `applicability` element's `input` must match the Case Input `id`. Its `value` must match one of that input's value IDs. Value IDs must be unique within the Case Input. The matching value establishes the source condition, and other known values rule it out. The generated app represents unknown as absent evidence.
+
+Case Input value labels must be distinct as displayed. The app appends ` (modeled value)` to a modeled value labeled `Unknown` so it remains distinct from the built-in missing-input option. After applying that suffix, the build ignores case, trims leading and trailing whitespace, collapses internal whitespace, and normalizes labels to Unicode NFC before comparing them. A collision reports `Duplicate Case Input display label` and identifies both value IDs.
 
 The `guidance` attribute must match an action ID in the same distribution. Action IDs must be unique within the distribution. IDs and references are compared exactly after XML parsing. Each action probability is a base-10 number between 0 and 1 inclusive. Scientific notation is allowed. Probabilities must sum to 1 within an absolute floating-point tolerance of `1e-12`.
 

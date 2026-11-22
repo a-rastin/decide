@@ -87,3 +87,8 @@ npm test
 
 - All 12 CLI rejection checks passed. They cover malformed syntax, a duplicate required element, an unsupported version, invalid Case Input and action references, duplicate action IDs, and invalid action probabilities. This includes probabilities outside the allowed range that would round to 0 or 1. Each rejected build exited with a cause-specific diagnostic and left the requested output directory absent.
 - The original 99/1 fixture built successfully and type checking passed. All 14 tests passed in the full suite, including the offline browser checks for the relocated app and the 95/5 variant. A temporary model using `99e-2` and `.01` also built successfully.
+
+## Review fixes verification
+
+- The public build rejected models with two leading UTF-8 byte-order marks or duplicate Case Input display labels and left the requested output directory absent. This includes canonically equivalent Unicode labels. A model with one leading mark built successfully and retained the original XML.
+- `npm run build` and `npm run typecheck` passed. All 19 tests passed with `npm test`, including both offline Chromium checks. The test runner needed to run outside the command sandbox to launch subprocesses.

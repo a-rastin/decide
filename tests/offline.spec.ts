@@ -1,15 +1,15 @@
-import { execFileSync } from "node:child_process";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test, type Browser } from "@playwright/test";
+import { buildApp } from "./build-app.ts";
 
 const fixture = "fixtures/six-week-follow-up/model.xml";
 
-function buildApp(model: string, output: string) {
-  const npm = process.env.npm_execpath;
-  if (!npm) throw new Error("Run the offline checks with npm test");
-  execFileSync(process.execPath, [npm, "run", "build", "--", model, output], { stdio: "pipe" });
+function expectSuccessfulBuild(model: string, output: string) {
+  const run = buildApp(model, output);
+  expect(run.error).toBeUndefined();
+  expect(run.status, run.stderr).toBe(0);
 }
 
 async function checkOfflineApp(browser: Browser, output: string, score: string) {
@@ -82,7 +82,7 @@ async function checkOfflineApp(browser: Browser, output: string, score: string) 
 test("updates six-week guidance when the source condition changes offline, even after relocation", async ({ browser }, testInfo) => {
   const original = testInfo.outputPath("app");
   const relocated = testInfo.outputPath("relocated app");
-  buildApp(fixture, original);
+  expectSuccessfulBuild(fixture, original);
 
   expect(await readFile(join(original, "model.xml"))).toEqual(await readFile(fixture));
   await checkOfflineApp(browser, original, "1%");
@@ -101,7 +101,7 @@ test("uses the supplied XML to score the same case at 95/5", async ({ browser },
 
   await mkdir(testInfo.outputDir, { recursive: true });
   await writeFile(variant, variantXml);
-  buildApp(variant, output);
+  expectSuccessfulBuild(variant, output);
 
   expect(await readFile(join(output, "model.xml"), "utf8")).toEqual(variantXml);
   await checkOfflineApp(browser, output, "5%");
