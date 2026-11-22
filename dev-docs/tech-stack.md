@@ -11,4 +11,4 @@
 
 The HeroUI packages are in `package.json` and `package-lock.json`. When implementing the UI, use React 19+ and Tailwind CSS v4 as required by [HeroUI v3](https://www.heroui.com/docs/react/getting-started/quick-start). In the app's main stylesheet, import `tailwindcss` before `@heroui/styles` and compile both into local CSS at build time.
 
-Choose the bundler, test runner, XML validator, inference implementation, and document conversion tools when the corresponding phase needs them. Prefer the smallest choice that meets that phase's exit check without weakening the [user specification](../user-specification.md).
+Choose the bundler, test runner, XML validator, inference implementation, and document conversion tools when the corresponding phase needs them. Prefer the smallest choice that meets that phase's exit check without weakening the [user specification](user-specification.md).

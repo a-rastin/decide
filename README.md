@@ -6,7 +6,7 @@
 
 ## Status
 
-This repository is at the **specification stage**: it contains the design, the project vocabulary, and npm dependencies for the planned UI, but no implementation yet. The normative description of what Decide must do is [`user-specification.md`](user-specification.md); the agreed terminology lives in [`GLOSSARY.md`](GLOSSARY.md). Plugin installation instructions, the agent prompt, and the one-line installer will appear here once they exist.
+This repository is at the **specification stage**: it contains the design, the project vocabulary, and npm dependencies for the planned UI, but no implementation yet. The normative description of what Decide must do is [`user-specification.md`](dev-docs/user-specification.md); the agreed terminology lives in [`GLOSSARY.md`](GLOSSARY.md). Plugin installation instructions, the agent prompt, and the one-line installer will appear here once they exist.
 
 For development, run `npm ci` to install the locked dependencies, including [HeroUI](https://www.heroui.com/) (`@heroui/react` and `@heroui/styles`). There is no app to start yet. See the [tech stack](dev-docs/tech-stack.md) for the planned integration.
 
@@ -24,7 +24,7 @@ The generated app will use a shared React UI built with HeroUI, with all assets 
 
 ### A note on probabilities
 
-The spec keeps three quantities separate: **clinical probabilities** (estimated chance of a condition or outcome), **action probabilities** (modeled support for a guidance option, sometimes from a declared *Research Modeling Convention*), and the **Do-Not-Consider Score** (an app-facing value where higher means stronger support for *not* considering an option). Conflating them is a common source of confusion — see the worked six-week follow-up example in [`user-specification.md`](user-specification.md).
+The spec keeps three quantities separate: **clinical probabilities** (estimated chance of a condition or outcome), **action probabilities** (modeled support for a guidance option, sometimes from a declared *Research Modeling Convention*), and the **Do-Not-Consider Score** (an app-facing value where higher means stronger support for *not* considering an option). Conflating them is a common source of confusion — see the worked six-week follow-up example in [`user-specification.md`](dev-docs/user-specification.md).
 
 ### Coverage is explicit
 
@@ -34,7 +34,7 @@ Decide reports modeled decisions, *Unresolved Decisions*, and unreadable section
 
 | File | Purpose |
 | --- | --- |
-| [`user-specification.md`](user-specification.md) | Normative specification of the plugin, workflow, and generated CDSS. |
+| [`dev-docs/user-specification.md`](dev-docs/user-specification.md) | Normative specification of the plugin, workflow, and generated CDSS. |
 | [`GLOSSARY.md`](GLOSSARY.md) | Canonical project terms and the words to avoid. |
 | [`dev-docs/mission.md`](dev-docs/mission.md) | Project mission and guiding principles. |
 | [`dev-docs/tech-stack.md`](dev-docs/tech-stack.md) | Implementation stack and runtime constraints. |
@@ -42,4 +42,4 @@ Decide reports modeled decisions, *Unresolved Decisions*, and unreadable section
 
 ## Contributing
 
-When changing the design, update `user-specification.md` and `GLOSSARY.md` together. Introduce a glossary term when a concept is resolved, and keep implementation details out of the glossary.
+When changing the design, update `dev-docs/user-specification.md` and `GLOSSARY.md` together. Introduce a glossary term when a concept is resolved, and keep implementation details out of the glossary.

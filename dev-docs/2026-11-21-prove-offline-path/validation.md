@@ -1,0 +1,27 @@
+# Phase 1 validation and merge criteria
+
+This checklist gates the Phase 1 implementation, not the first release. For context, see [requirements.md](requirements.md) and the [roadmap exit check](../roadmap.md).
+
+## Build checks
+
+- [ ] From a clean checkout with documented prerequisites, install locked dependencies and run the documented public build command with the six-week fixture. Confirm success and a portable output folder with `index.html`, the authoritative XML, and the required local assets.
+- [ ] Run the same build with malformed or structurally invalid XML, with an unsupported schema version, and with structurally valid XML containing an invalid probability distribution. Each run fails with a useful error and does not generate a new app from the rejected model.
+- [ ] Build a temporary valid variant that changes the complementary action probabilities (for example, from 99/1 to 95/5). The applicable case shows a 5% Do-Not-Consider Score without changes to the UI code. The acceptance fixture remains 99/1.
+
+## Offline browser checks
+
+Open the generated `index.html` via `file://` in a browser with networking disabled and no server or agent host running. Use the same artifact for all three synthetic cases.
+
+| Case | Expected result |
+| --- | --- |
+| Applies | Shows the six-week next step, why it applies, and a matching short citation. Displays a **1% Do-Not-Consider Score** for rechecking, labels the Research Modeling Convention, and does not present the score as a clinical probability. |
+| Does not apply | Names the unmet source condition. Does not present the six-week action as applicable or display a score. |
+| Unknown | Names the missing Case Input or prompts for it. Does not treat unknown as no, present the six-week action as applicable, or display a score. |
+
+- [ ] Automate the case assertions through the visible UI. Switch from the applicable case to each unscored state and confirm that the previous score clears.
+- [ ] Confirm the HeroUI control is visibly styled and can change Case Inputs. Confirm the research-only, not-for-clinical-use notice is visible.
+- [ ] Confirm the app makes no network requests, and repeat the open-and-interact check from a relocated output folder.
+
+## Ready to merge when
+
+The build and offline browser checks pass, reviewers can reproduce them from the documented commands, and the implementation review includes the outcomes and identifies any manual checks. No failures affecting this phase’s exit check are deferred. No agent-host smoke test or later-phase feature is required for this merge.
