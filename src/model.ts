@@ -1,5 +1,6 @@
 type CaseValue = { id: string; label: string };
-type CompetingAction = CaseValue & { probability: number };
+type ActionReference = { id: string; label: string };
+type CompetingAction = ActionReference & { probability: number };
 
 export const unknownCaseLabel = "Unknown";
 
@@ -41,7 +42,7 @@ type DecisionOutcome =
   | { status: "missing" }
   | { status: "invalid" }
   | { status: "unmet" }
-  | { status: "applicable"; action: string; doNotConsiderScore: number };
+  | { status: "applicable"; action: ActionReference; doNotConsiderScore: number };
 
 export const decimalLiteral = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
@@ -71,12 +72,12 @@ export function evaluateDecision(decision: DecideModel["decision"], caseValue: s
   if ("operator" in applicability) {
     const literal = String(caseValue).trim();
     if (!literal) return { status: "missing" };
-    if (!decimalLiteral.test(literal) || !Number.isFinite(Number(literal))) return { status: "invalid" };
+    if (!decimalLiteral.test(literal)) return { status: "invalid" };
     const comparison = compareDecimals(literal, applicability.threshold);
     const matches = { lt: comparison < 0, lte: comparison <= 0, gt: comparison > 0, gte: comparison >= 0 };
     if (!matches[applicability.operator]) return { status: "unmet" };
   } else if (caseValue !== applicability.value) return { status: "unmet" };
 
-  const action = decision.distribution.guidance;
-  return { status: "applicable", action: action.label, doNotConsiderScore: 1 - action.probability };
+  const { id, label, probability } = decision.distribution.guidance;
+  return { status: "applicable", action: { id, label }, doNotConsiderScore: 1 - probability };
 }

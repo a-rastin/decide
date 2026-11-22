@@ -15,7 +15,7 @@ test("scores the six-week guidance when baseline checks are complete", () => {
 
   expect(result).toEqual({
     status: "applicable",
-    action: "Recheck at six weeks",
+    action: { id: "recheck", label: "Recheck at six weeks" },
     doNotConsiderScore: expect.closeTo(0.01, 10),
   });
 });

@@ -101,3 +101,12 @@ verified guidance. The test report covers build-time synthetic checks, not
 browser checks. A rerun targeting an existing path publishes to a distinct
 suffixed folder and prints its actual entry point. Add `--replace` to replace
 the requested output only after the new artifact has been staged successfully.
+Replacement requires a `.decide-build` marker that matches the core app files.
+For an older build without a marker, or a build with changed core files, rerun
+without `--replace` or choose a new destination. If another Decide process is
+publishing to the same destination, a default rerun chooses a suffix;
+`--replace` reports a conflict. Do not publish inside another Decide build.
+Hidden directory names ending in `-publish-lock` are reserved for publication.
+Avoid changing the destination with other tools during publication. If an
+external change blocks rollback, the command reports the previous build's
+backup path rather than deleting it.

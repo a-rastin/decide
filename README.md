@@ -21,9 +21,11 @@ Open `dist/index.html` directly in a browser. The folder contains the authoritat
 
 If the destination already exists, the build publishes to a separate suffixed
 folder and prints the actual `index.html` path. Add `--replace` after the model
-and output arguments to explicitly replace the requested destination. Builds
-are staged before publication, so validation or generation failures leave the
-previous output untouched.
+and output arguments to replace an existing Decide build. Replacement checks the
+`.decide-build` marker against the core app files. For older builds without a
+marker or builds with modified core files, use a suffixed or new destination.
+Builds are staged before publication, so validation or generation failures
+leave the previous output untouched.
 
 To build a copy with a different model or destination, pass the XML path and output folder in that order. See the [Decide XML schema](dev-docs/specs/2026-11-21-prove-offline-path/xml-model.md) for the supported structure and validation rules.
 
@@ -60,10 +62,7 @@ section. The other three decisions verify. A version 2 build requires `--cases`;
 verifies, no app is published. See the [input contract](dev-docs/specs/2026-11-22-verify-multi-decision-builds/inputs.md)
 for model and case requirements.
 
-As with the six-week build, reruns preserve an existing destination by default:
-the command prints the new suffixed path. Pass `--replace` with the arguments
-above only when replacement is intended; failed builds leave the previous
-artifact untouched.
+The same rerun and replacement rules apply as for the six-week build.
 
 ## Run the tests
 

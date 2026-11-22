@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type TestContext } from "vitest";
@@ -136,6 +137,30 @@ test("explicit replacement publishes the complete new build at the requested des
   expect(await readFile(join(output, "test-report.md"), "utf8")).toContain("equipment-yes-deliberate-mismatch");
 }, 20000);
 
+test("explicit replacement refuses to change an unrelated output directory", async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), "decide-unrelated-output-"));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const output = join(directory, "project");
+  await mkdir(output);
+  await writeFile(join(output, "index.html"), "unrelated site");
+  await writeFile(join(output, "model.xml"), await readFile(fixture));
+
+  const run = buildApp(fixture, output, ["--replace"]);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(/not a Decide build/i);
+  expect((await readdir(output)).sort()).toEqual(["index.html", "model.xml"]);
+  expect(await readFile(join(output, "index.html"), "utf8")).toBe("unrelated site");
+});
+
+test("explicit replacement refuses a repurposed output even when its build marker remains", async (context) => {
+  const { output } = await generateApp(context);
+  await writeFile(join(output, "index.html"), "unrelated site");
+  const run = buildApp(fixture, output, ["--replace"]);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(/not a Decide build/i);
+  expect(await readFile(join(output, "index.html"), "utf8")).toBe("unrelated site");
+}, 20000);
+
 test("failed explicit replacements preserve the existing artifact and leave no staged build", async (context) => {
   const { directory, output } = await generateApp(context);
   const files = (await readdir(output)).sort();
@@ -153,6 +178,44 @@ test("failed explicit replacements preserve the existing artifact and leave no s
   expect((await readdir(output)).sort()).toEqual(files);
   expect(await Promise.all(files.map((file) => readFile(join(output, file))))).toEqual(original);
   expect((await readdir(directory)).sort()).toEqual(["empty-cases.json", "invalid.xml", "portable app"]);
+}, 20000);
+
+test("a concurrent default publisher cannot take the destination during a failed replacement", async (context) => {
+  const { directory, output } = await generateApp(context);
+  await writeFile(join(output, "keep.txt"), "original output");
+  const files = (await readdir(output)).sort();
+  const original = await Promise.all(files.map((file) => readFile(join(output, file))));
+  const preload = join(directory, "fail-publication.mjs");
+  // Run a second build after the old artifact has moved but before the new one is published.
+  await writeFile(preload, `
+    import { spawnSync } from "node:child_process";
+    import fs from "node:fs/promises";
+    import { syncBuiltinESMExports } from "node:module";
+    import { join } from "node:path";
+    const rename = fs.rename;
+    const [, script, model, target] = process.argv;
+    fs.rename = async (from, to) => {
+      if (to === target && from.includes("-stage-")) {
+        const concurrent = spawnSync(process.execPath, [script, model, target], { encoding: "utf8" });
+        if (concurrent.status !== 0) throw new Error("Concurrent build failed: " + concurrent.stderr);
+        const nested = spawnSync(process.execPath, [script, model, join(target, "child")], { encoding: "utf8" });
+        if (nested.status !== 1 || !nested.stderr.includes("Cannot publish inside")) {
+          throw new Error("Nested publication was not refused: " + nested.stderr);
+        }
+        throw new Error("Simulated publication failure");
+      }
+      return rename(from, to);
+    };
+    syncBuiltinESMExports();
+  `);
+
+  const run = spawnSync(process.execPath, ["--import", preload, "src/build.ts", fixture, output, "--replace"], { encoding: "utf8" });
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toContain("Simulated publication failure");
+  expect((await readdir(output)).sort()).toEqual(files);
+  expect(await Promise.all(files.map((file) => readFile(join(output, file))))).toEqual(original);
+  expect(await readFile(join(`${output}-1`, "model.xml"))).toEqual(await readFile(fixture));
+  expect((await readdir(directory)).sort()).toEqual(["fail-publication.mjs", "portable app", "portable app-1"]);
 }, 20000);
 
 test("preserves an existing app when a rebuild rejects the supplied model", async (context) => {

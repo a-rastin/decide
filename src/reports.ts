@@ -1,5 +1,5 @@
 import type { MultiModel } from "./model.ts";
-import type { verifyCategorical } from "./verify-categorical.ts";
+import type { verifyCases } from "./verify-cases.ts";
 
 function object(value: unknown, description: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Invalid ${description}`);
@@ -11,7 +11,7 @@ function text(value: unknown, description: string): string {
   return value;
 }
 
-export function createReports(model: MultiModel, content: string, verification: ReturnType<typeof verifyCategorical>) {
+export function createReports(model: MultiModel, content: string, verification: ReturnType<typeof verifyCases>) {
   const inventory = object(JSON.parse(content), "inventory");
   if (inventory.version !== 1 || !Array.isArray(inventory.decisions) || !Array.isArray(inventory.sections)) throw new Error("Invalid inventory version, decisions or sections");
   const source = text(inventory.source, "inventory source");

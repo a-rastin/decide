@@ -97,6 +97,23 @@ test("builds numeric decisions and rejects invalid numeric definitions before pu
   }
 }, 30000);
 
+test("verifies finite decimal thresholds outside JavaScript's number range", async (context) => {
+  const directory = await createBuildDirectory(context);
+  const model = join(directory, "model.xml");
+  const cases = join(directory, "cases.json");
+  const output = join(directory, "app");
+  const xml = await readFile("fixtures/mixed-decisions/model.xml", "utf8");
+  const sourceCases = await readFile("fixtures/mixed-decisions/cases.json", "utf8");
+  await writeFile(model, xml.replace('threshold="10"', 'threshold="1e309"'));
+  await writeFile(cases, sourceCases
+    .replace('"marker": 9.99', '"marker": 9.99e308')
+    .replace('"marker": 10 }', '"marker": 1e309 }')
+    .replace('"marker": 10.01', '"marker": 1.001e309'));
+  const run = buildApp(model, output, ["--cases", cases, "--inventory", "fixtures/mixed-decisions/inventory.json"]);
+  expect(run.status, run.stderr).toBe(0);
+  expect(await readFile(join(output, "coverage-report.md"), "utf8")).toMatch(/repeat-marker.*verified and delivered/);
+});
+
 test("refuses to publish v2 without verification cases", async (context) => {
   const directory = await createBuildDirectory(context);
   const model = join(directory, "model.xml");
@@ -144,6 +161,23 @@ test("rejects an applicability reference to an unknown Case Input value", async 
 test("rejects ambiguous Case Input value labels", async (context) => {
   await expectBuildRejection(context, 'label="No"', 'label="Yes"',
     /duplicate Case Input display label "Yes".*"yes" and "no"/i);
+});
+
+test("reports both colliding value IDs even when a v2 Case Input is unused", async (context) => {
+  const directory = await createBuildDirectory(context);
+  const model = join(directory, "invalid.xml");
+  const output = join(directory, "app");
+  const xml = await readFile("fixtures/mixed-decisions/model.xml", "utf8");
+  await writeFile(model, xml.replace("</decide-model>", `
+    <case-input id="unused" label="Unused" type="categorical">
+      <value id="first" label="Same" />
+      <value id="second" label=" same " />
+    </case-input>
+  </decide-model>`));
+  const run = buildApp(model, output, ["--cases", "fixtures/mixed-decisions/cases.json"]);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(/duplicate Case Input display label .*"first" and "second"/i);
+  await expect(stat(output)).rejects.toHaveProperty("code", "ENOENT");
 });
 
 test("rejects canonically equivalent Case Input value labels", async (context) => {

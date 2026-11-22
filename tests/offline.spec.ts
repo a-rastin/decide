@@ -197,9 +197,11 @@ test("routes verified categorical decisions and reuses only shared Case Input ID
   const relocated = testInfo.outputPath("relocated categorical app");
   const excludedOutput = testInfo.outputPath("excluded-app");
   const xml = (await readFile("fixtures/mixed-decisions/model.xml", "utf8"))
+    .replaceAll("initial-checklist", "constructor")
     .replace(/  <case-input id="marker".*\/>\n/, "")
     .replace(/    <clinical-decision id="repeat-marker"[\s\S]*?    <\/clinical-decision>\n/, "");
-  const sourceCases = JSON.parse(await readFile("fixtures/mixed-decisions/cases.json", "utf8"));
+  const sourceCases = JSON.parse((await readFile("fixtures/mixed-decisions/cases.json", "utf8"))
+    .replaceAll("initial-checklist", "constructor"));
   const categoricalCases = sourceCases.cases.filter((entry: { decision: string }) => entry.decision !== "repeat-marker");
   await mkdir(testInfo.outputDir, { recursive: true });
   await writeFile(model, xml);
@@ -226,6 +228,7 @@ test("routes verified categorical decisions and reuses only shared Case Input ID
       await expect(page.getByRole("radiogroup", { name: "Is the checklist complete?" })).toHaveCount(0);
       await page.getByText("Readiness", { exact: true }).first().click();
       await page.getByText("Routine review", { exact: true }).first().click();
+      await expect(page.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
       await page.getByText("Yes", { exact: true }).click();
       await expect(page.getByRole("heading", { name: "Schedule a routine review" })).toBeVisible();
       await page.getByText("Information pack", { exact: true }).first().click();
@@ -247,7 +250,11 @@ test("routes verified categorical decisions and reuses only shared Case Input ID
 
 test("evaluates numeric inputs and rejects invalid text offline", async ({ browser }, testInfo) => {
   const output = testInfo.outputPath("numeric-app");
-  const run = buildApp("fixtures/mixed-decisions/model.xml", output, ["--cases", "fixtures/mixed-decisions/cases.json"]);
+  const casesPath = testInfo.outputPath("boundary-cases.json");
+  const cases = await readFile("fixtures/mixed-decisions/cases.json", "utf8");
+  await mkdir(testInfo.outputDir, { recursive: true });
+  await writeFile(casesPath, cases.replace("9.99", "9.9999999999999999").replace("10.01", "1.00000000000000001e1"));
+  const run = buildApp("fixtures/mixed-decisions/model.xml", output, ["--cases", casesPath]);
   expect(run.status, run.stderr).toBe(0);
   const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
   try {
@@ -262,7 +269,7 @@ test("evaluates numeric inputs and rejects invalid text offline", async ({ brows
     await input.fill("10");
     await expect(page.getByRole("heading", { name: "Repeat the marker check" })).toBeVisible();
     await expect(page.getByText("5%", { exact: true })).toBeVisible();
-    await input.fill("10.01");
+    await input.fill("1.00000000000000001e1");
     await expect(page.getByRole("heading", { name: "Repeat the marker check" })).toBeVisible();
     await input.fill("oops");
     await expect(page.getByText("Invalid numeric Case Input")).toBeVisible();

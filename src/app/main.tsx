@@ -84,7 +84,7 @@ function App({ model, selectedOption, setSelectedOption, navigation }: {
             ) : (
               <article className="space-y-5">
                 <h3 className="font-serif text-3xl tracking-tight text-slate-950">
-                  {applicable ? result.action : "Guidance does not apply"}
+                  {applicable ? result.action.label : "Guidance does not apply"}
                 </h3>
                 <dl className="border-s-2 border-teal-500 ps-4">
                   <dt className="text-sm font-semibold">{applicable ? "Applicable source condition" : "Unmet source condition"}</dt>
@@ -152,8 +152,10 @@ function Root({ model }: { model: DecideModel | MultiModel }) {
       <main className="mx-auto max-w-6xl px-6 py-10">{navigation}</main>
     </>
   );
-  return <App model={current} navigation={navigation} selectedOption={values[current.caseInput.id] ?? ("type" in current.caseInput ? "" : unknownCaseOption)}
-    setSelectedOption={(value) => setValues((previous) => ({ ...previous, [current.caseInput.id]: value }))} />;
+  const id = current.caseInput.id;
+  const selectedOption = Object.hasOwn(values, id) ? values[id] : "type" in current.caseInput ? "" : unknownCaseOption;
+  return <App model={current} navigation={navigation} selectedOption={selectedOption}
+    setSelectedOption={(value) => setValues((previous) => ({ ...previous, [id]: value }))} />;
 }
 
 const root = document.getElementById("app");

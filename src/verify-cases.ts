@@ -5,8 +5,18 @@ function object(value: unknown, description: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-export function verifyCategorical(model: MultiModel, content: string) {
-  const data = object(JSON.parse(content), "verification cases");
+export function verifyCases(model: MultiModel, content: string) {
+  // Keep JSON numbers typed as numbers for schema checks, but use the original
+  // tokens for thresholds, where even a small rounding error can change the outcome.
+  const numberLiterals = new WeakMap<object, Map<string, string>>();
+  const data = object(JSON.parse(content, function (this: object, key: string, value: unknown, context?: { source: string }) {
+    if (typeof value === "number" && context) {
+      const literals = numberLiterals.get(this) ?? new Map<string, string>();
+      literals.set(key, context.source);
+      numberLiterals.set(this, literals);
+    }
+    return value;
+  }), "verification cases");
   if (data.version !== 1 || !Array.isArray(data.cases)) throw new Error("Invalid verification cases version or cases");
   const decisions = model.routes.flatMap((route) => route.decisions);
   const ids = new Set<string>();
@@ -20,29 +30,33 @@ export function verifyCategorical(model: MultiModel, content: string) {
     const inputs = object(entry.inputs, `inputs for case "${entry.id}"`);
     const expected = object(entry.expected, `expected result for case "${entry.id}"`);
     if (Object.keys(inputs).some((key) => key !== decision.caseInput.id)) throw new Error(`Invalid Case Input in case "${entry.id}"`);
-    const value = inputs[decision.caseInput.id];
     const input = decision.caseInput;
+    const value = Object.hasOwn(inputs, input.id) ? inputs[input.id] : undefined;
     const numeric = "type" in input;
-    if (value !== undefined && ("type" in input
-      ? typeof value !== "number" || !Number.isFinite(value)
-      : typeof value !== "string" || !input.values.some(({ id }) => id === value))) {
-      throw new Error(`Invalid Case Input value in case "${entry.id}"`);
+    let caseValue: string | null = null;
+    if (value !== undefined) {
+      if (numeric && typeof value === "number") {
+        caseValue = numberLiterals.get(inputs)?.get(input.id) ?? null;
+      } else if (!numeric && typeof value === "string" && input.values.some(({ id }) => id === value)) {
+        caseValue = value;
+      }
+      if (caseValue === null) throw new Error(`Invalid Case Input value in case "${entry.id}"`);
     }
     if (!["applicable", "unmet", "missing"].includes(String(expected.state))) throw new Error(`Invalid expected state in case "${entry.id}"`);
     if (expected.state === "applicable") {
       if (typeof expected.guidance !== "string" || typeof expected.score !== "number" || !Number.isFinite(expected.score) || expected.score < 0 || expected.score > 1) throw new Error(`Invalid expected guidance or score in case "${entry.id}"`);
     } else if ("guidance" in expected || "score" in expected) throw new Error(`Unexpected guidance or score in case "${entry.id}"`);
-    const actual = evaluateDecision(decision.decision, value === undefined ? null : value as string | number);
+    const actual = evaluateDecision(decision.decision, caseValue);
     const outcome = results.get(decision.id)!;
     outcome.states.add(actual.status);
-    if (numeric && value !== undefined && "operator" in decision.decision.applicability) {
-      outcome.boundaries.add(compareDecimals(String(value), decision.decision.applicability.threshold));
+    if (numeric && caseValue !== null && "operator" in decision.decision.applicability) {
+      outcome.boundaries.add(compareDecimals(caseValue, decision.decision.applicability.threshold));
     }
     const actualResult = actual.status === "applicable"
-      ? { state: actual.status, guidance: decision.decision.distribution.guidance.id, score: actual.doNotConsiderScore }
+      ? { state: actual.status, guidance: actual.action.id, score: actual.doNotConsiderScore }
       : { state: actual.status };
     if (actual.status !== expected.state || (actual.status === "applicable" &&
-      (decision.decision.distribution.guidance.id !== expected.guidance || Math.abs(actual.doNotConsiderScore - (expected.score as number)) > 1e-12))) {
+      (actual.action.id !== expected.guidance || Math.abs(actual.doNotConsiderScore - (expected.score as number)) > 1e-12))) {
       outcome.failures.push(`Case ${entry.id}: expected ${JSON.stringify(expected)}; actual ${JSON.stringify(actualResult)}`);
     } else outcome.checks.push(`Case ${entry.id}: passed`);
   }
