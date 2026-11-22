@@ -27,6 +27,11 @@ export interface DecideModel {
   };
 }
 
+export interface MultiModel {
+  version: 2;
+  routes: { id: string; label: string; decisions: (DecideModel & { id: string })[] }[];
+}
+
 type DecisionOutcome =
   | { status: "missing" }
   | { status: "unmet" }

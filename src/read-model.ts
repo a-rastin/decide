@@ -1,5 +1,5 @@
 import { SaxesParser } from "saxes";
-import { caseValueDisplayLabel, type DecideModel } from "./model.ts";
+import { caseValueDisplayLabel, type DecideModel, type MultiModel } from "./model.ts";
 
 interface XmlElement {
   name: string;
@@ -141,7 +141,10 @@ function parseXml(xml: Uint8Array): XmlElement {
 }
 
 export function readModel(xml: Uint8Array): DecideModel {
-  const root = parseXml(xml);
+  return readSingleModel(parseXml(xml));
+}
+
+function readSingleModel(root: XmlElement): DecideModel {
   if (root.name !== "decide-model") {
     throw new Error('Expected an unqualified <decide-model> root element');
   }
@@ -207,4 +210,60 @@ export function readModel(xml: Uint8Array): DecideModel {
       distribution: { convention, guidance },
     },
   };
+}
+
+export function readBuildModel(xml: Uint8Array): DecideModel | MultiModel {
+  const root = parseXml(xml);
+  if (root.name !== "decide-model" || root.attributes.version !== "2") return readSingleModel(root);
+  validateElement(root, ["version"], ["case-input", "route"]);
+  const inputs = childrenNamed(root, "case-input");
+  const routeElements = childrenNamed(root, "route");
+  if (!inputs.length || !routeElements.length) throw new Error("Version 2 requires Case Inputs and routes");
+  const parsedInputs = inputs.map((input) => {
+    validateElement(input, ["id", "label", "type"], ["value"]);
+    if (attribute(input, "type") !== "categorical") throw new Error("Only categorical Case Inputs are supported in version 2");
+    attribute(input, "label");
+    return { id: attribute(input, "id"), element: input };
+  });
+  validateUniqueIds(parsedInputs, "case-input");
+  const allDecisions: { id: string }[] = [];
+  const routes = routeElements.map((route) => {
+    validateElement(route, ["id", "label"], ["clinical-decision"]);
+    const routeInfo = labeledValue(route);
+    const decisionElements = childrenNamed(route, "clinical-decision");
+    if (!decisionElements.length) throw new Error(`Route "${routeInfo.id}" has no Clinical Decisions`);
+    const decisions = decisionElements.map((decision) => {
+      validateElement(decision, ["id", "title"], ["applicability", "action-distribution"]);
+      const id = attribute(decision, "id");
+      allDecisions.push({ id });
+      const inputId = attribute(child(decision, "applicability"), "input");
+      const input = parsedInputs.find((entry) => entry.id === inputId);
+      if (!input) throw new Error(`<applicability> references unknown Case Input "${inputId}"`);
+      const singleRoot: XmlElement = {
+        name: "decide-model",
+        attributes: { version: "1" },
+        text: "",
+        children: [
+          { ...input.element, attributes: { id: input.id, label: attribute(input.element, "label") } },
+          { ...decision, attributes: { title: attribute(decision, "title") } },
+        ],
+      };
+      return { id, ...readSingleModel(singleRoot) };
+    });
+    return { ...routeInfo, decisions };
+  });
+  validateUniqueIds(routes, "route");
+  validateUniqueIds(allDecisions, "clinical-decision");
+  // Validate even unused Case Inputs through the same value and label rules.
+  for (const input of parsedInputs) {
+    if (!routes.some((route) => route.decisions.some((decision) => decision.caseInput.id === input.id))) {
+      const values = alternatives(input.element, "value");
+      for (const value of values) validateElement(value, ["id", "label"]);
+      const entries = values.map(labeledValue);
+      validateUniqueIds(entries, "value");
+      const labels = entries.map(({ label }) => caseValueDisplayLabel(label).replace(/\s+/g, " ").trim().toLowerCase().normalize("NFC"));
+      if (new Set(labels).size !== labels.length) throw new Error(`Duplicate Case Input display label in "${input.id}"`);
+    }
+  }
+  return { version: 2, routes };
 }

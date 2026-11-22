@@ -1,9 +1,16 @@
 # Phase 2 input contract
 
-This is the contract for the remaining Phase 2 implementation, **not a claim
-that version 2 or the command below is supported today**. The current build
-accepts [version 1](../2026-11-21-prove-offline-path/xml-model.md) only. Version
-1 and its two positional arguments remain supported unchanged.
+This is the contract for Phase 2. The current build supports the categorical
+subset of version 2 with `--cases`; numeric inputs, inventory reconciliation,
+reports and the full command below are not implemented yet. Version 1 and its
+two positional arguments remain supported unchanged.
+
+For a categorical-only version 2 model, run
+`npm run build -- path/to/model.xml path/to/output --cases path/to/cases.json`.
+Every delivered decision must pass independently authored applicable, unmet,
+and missing cases. Failed or insufficiently tested decisions are excluded;
+if none pass, no app is published. Such a build may be partial and is not a
+substitute for the planned coverage and test reports.
 
 ## Version 2 XML
 

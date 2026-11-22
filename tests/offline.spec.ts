@@ -106,3 +106,54 @@ test("uses the supplied XML to score the same case at 95/5", async ({ browser },
   expect(await readFile(join(output, "model.xml"), "utf8")).toEqual(variantXml);
   await checkOfflineApp(browser, output, "5%");
 });
+
+test("routes verified categorical decisions and reuses only shared Case Input IDs offline", async ({ browser }, testInfo) => {
+  const model = testInfo.outputPath("categorical.xml");
+  const cases = testInfo.outputPath("cases.json");
+  const output = testInfo.outputPath("app");
+  const excludedOutput = testInfo.outputPath("excluded-app");
+  const xml = (await readFile("fixtures/mixed-decisions/model.xml", "utf8"))
+    .replace(/  <case-input id="marker".*\/>\n/, "")
+    .replace(/    <clinical-decision id="repeat-marker"[\s\S]*?    <\/clinical-decision>\n/, "");
+  const sourceCases = JSON.parse(await readFile("fixtures/mixed-decisions/cases.json", "utf8"));
+  const categoricalCases = sourceCases.cases.filter((entry: { decision: string }) => entry.decision !== "repeat-marker");
+  await mkdir(testInfo.outputDir, { recursive: true });
+  await writeFile(model, xml);
+  await writeFile(cases, JSON.stringify({ version: 1, cases: categoricalCases }));
+  const excluded = buildApp(model, excludedOutput, ["--cases", cases]);
+  expect(excluded.status, excluded.stderr).toBe(0);
+  categoricalCases.find((entry: { id: string }) => entry.id === "equipment-yes-deliberate-mismatch").expected.score = 0.1;
+  await writeFile(cases, JSON.stringify({ version: 1, cases: categoricalCases }));
+  const run = buildApp(model, output, ["--cases", cases]);
+  expect(run.status, run.stderr).toBe(0);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  const requests: string[] = [];
+  context.on("request", (request) => {
+    if (!["file:", "data:", "blob:"].includes(new URL(request.url()).protocol)) requests.push(request.url());
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(excludedOutput, "index.html")).href);
+    await expect(page.getByRole("radio", { name: "Monitoring" })).toHaveCount(0);
+    await expect(page.getByText("Equipment inspection", { exact: true })).toHaveCount(0);
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    await expect(page.getByRole("radiogroup", { name: "Is the checklist complete?" })).toHaveCount(0);
+    await page.getByText("Readiness", { exact: true }).first().click();
+    await page.getByText("Routine review", { exact: true }).first().click();
+    await page.getByText("Yes", { exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Schedule a routine review" })).toBeVisible();
+    await page.getByText("Information pack", { exact: true }).first().click();
+    await expect(page.getByRole("heading", { name: "Offer the information pack" })).toBeVisible();
+    await page.getByText("Monitoring", { exact: true }).first().click();
+    await page.getByText("Equipment inspection", { exact: true }).first().click();
+    await expect(page.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
+    await page.getByText("No", { exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Guidance does not apply" })).toBeVisible();
+    await page.getByText("Readiness", { exact: true }).first().click();
+    await page.getByText("Routine review", { exact: true }).first().click();
+    await expect(page.getByRole("heading", { name: "Schedule a routine review" })).toBeVisible();
+    expect(requests).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});

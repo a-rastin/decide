@@ -3,13 +3,16 @@ import { join, resolve } from "node:path";
 import tailwindcss from "@tailwindcss/postcss";
 import { build } from "esbuild";
 import postcss from "postcss";
-import { readModel } from "./read-model.ts";
+import { readBuildModel } from "./read-model.ts";
+import { verifyCategorical } from "./verify-categorical.ts";
 
-async function generateApp(modelPath: string, outputPath: string) {
+async function generateApp(modelPath: string, outputPath: string, casesPath?: string) {
   const project = resolve(import.meta.dirname, "..");
   const app = join(project, "src", "app");
   const xml = await readFile(modelPath);
-  const model = readModel(xml);
+  const parsed = readBuildModel(xml);
+  if ("version" in parsed && !casesPath) throw new Error("Version 2 requires --cases for verification");
+  const model = "version" in parsed ? verifyCategorical(parsed, await readFile(casesPath!, "utf8")) : parsed;
   const stylesheet = join(app, "app.css");
   const [bundle, css, html] = await Promise.all([
     build({
@@ -36,9 +39,10 @@ async function generateApp(modelPath: string, outputPath: string) {
   ]);
 }
 
-const [modelPath = "fixtures/six-week-follow-up/model.xml", outputPath = "dist"] = process.argv.slice(2);
+const [modelPath = "fixtures/six-week-follow-up/model.xml", outputPath = "dist", ...options] = process.argv.slice(2);
 try {
-  await generateApp(modelPath, outputPath);
+  if (options.length && (options.length !== 2 || options[0] !== "--cases" || !options[1])) throw new Error("Expected --cases <path>");
+  await generateApp(modelPath, outputPath, options[1]);
   console.log(`Generated ${resolve(outputPath, "index.html")}`);
 } catch (error) {
   console.error(`Build failed for ${modelPath}: ${error instanceof Error ? error.message : String(error)}`);

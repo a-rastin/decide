@@ -64,6 +64,54 @@ test("accepts model XML with one leading UTF-8 byte-order mark", async (context)
   expect(await readFile(join(output, "model.xml"), "utf8")).toBe(xml);
 });
 
+test("builds a categorical v2 model only when synthetic cases verify its decisions", async (context) => {
+  const directory = await createBuildDirectory(context);
+  const model = join(directory, "model.xml");
+  const cases = join(directory, "cases.json");
+  const output = join(directory, "app");
+  const mixed = await readFile("fixtures/mixed-decisions/model.xml", "utf8");
+  const xml = mixed
+    .replace(/  <case-input id="marker".*\/>\n/, "")
+    .replace(/    <clinical-decision id="repeat-marker"[\s\S]*?    <\/clinical-decision>\n/, "");
+  const mixedCases = JSON.parse(await readFile("fixtures/mixed-decisions/cases.json", "utf8"));
+  await writeFile(model, xml);
+  await writeFile(cases, JSON.stringify({ version: 1, cases: mixedCases.cases.filter((c: { decision: string }) => c.decision !== "repeat-marker") }));
+
+  const run = buildApp(model, output, ["--cases", cases]);
+  expect(run.status, run.stderr).toBe(0);
+  expect(await readFile(join(output, "model.xml"), "utf8")).toBe(xml);
+});
+
+test("refuses to publish v2 without verification cases", async (context) => {
+  const directory = await createBuildDirectory(context);
+  const model = join(directory, "model.xml");
+  const output = join(directory, "app");
+  const xml = (await readFile("fixtures/mixed-decisions/model.xml", "utf8"))
+    .replace(/  <case-input id="marker".*\/>\n/, "")
+    .replace(/    <clinical-decision id="repeat-marker"[\s\S]*?    <\/clinical-decision>\n/, "");
+  await writeFile(model, xml);
+  const run = buildApp(model, output);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(/requires --cases/i);
+  await expect(stat(output)).rejects.toHaveProperty("code", "ENOENT");
+});
+
+test("refuses to publish when no categorical decision has sufficient verification", async (context) => {
+  const directory = await createBuildDirectory(context);
+  const model = join(directory, "model.xml");
+  const cases = join(directory, "cases.json");
+  const output = join(directory, "app");
+  const xml = (await readFile("fixtures/mixed-decisions/model.xml", "utf8"))
+    .replace(/  <case-input id="marker".*\/>\n/, "")
+    .replace(/    <clinical-decision id="repeat-marker"[\s\S]*?    <\/clinical-decision>\n/, "");
+  await writeFile(model, xml);
+  await writeFile(cases, JSON.stringify({ version: 1, cases: [] }));
+  const run = buildApp(model, output, ["--cases", cases]);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(/no verified decisions.*routine-review.*information-pack.*inspect-equipment/i);
+  await expect(stat(output)).rejects.toHaveProperty("code", "ENOENT");
+});
+
 test("rejects structurally invalid model XML with duplicate applicability elements", async (context) => {
   await expectBuildRejection(context, '</applicability>', '</applicability><applicability />',
     /expected exactly one <applicability> in <clinical-decision>.*found 2/i);
