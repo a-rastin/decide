@@ -2,3 +2,7 @@ node_modules/
 /dist/
 /test-results/
 /playwright-report/
+
+# Local agent / IDE state (not tracked)
+/.agents/
+/.openidea/
