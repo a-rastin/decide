@@ -5,7 +5,7 @@ This checklist gates the Phase 1 implementation, not the first release. For cont
 ## Build checks
 
 - [x] From a clean checkout with documented prerequisites, install locked dependencies and run the documented public build command with the six-week fixture. Confirm success and a portable output folder with `index.html`, the authoritative XML, and the required local assets.
-- [ ] Run the same build with malformed or structurally invalid XML, with an unsupported schema version, and with structurally valid XML containing an invalid probability distribution. Each run fails with a useful error and does not generate a new app from the rejected model.
+- [x] Run the same build with malformed or structurally invalid XML, with invalid references, with an unsupported schema version, and with structurally valid XML containing an invalid probability distribution. Each run fails with a useful error and does not generate a new app from the rejected model.
 - [x] Build a temporary valid variant that changes the complementary action probabilities (for example, from 99/1 to 95/5). The applicable case shows a 5% Do-Not-Consider Score without changes to the UI code. The acceptance fixture remains 99/1.
 
 ## Offline browser checks
@@ -73,3 +73,17 @@ npm test
 - The focused check failed before the change because the **Unknown** option was missing. It passed after the change in both the original and relocated app folders, with zero network requests.
 - In the same offline `file://` page, switching from **Yes** to **Unknown** asked whether all baseline checks were completed and cleared the six-week recommendation and **1%** score. The result showed missing evidence without an unmet-condition message.
 - The default build, type check, and both browser tests passed. The temporary 95/5 fixture also cleared the recommendation and **5%** score on the same transition.
+
+## Task 04 verification
+
+With the Task 01 prerequisites installed, run the focused build checks followed by the original fixture build, type check, and full suite.
+
+```sh
+npm test -- --grep rejects
+npm run build
+npm run typecheck
+npm test
+```
+
+- All 12 CLI rejection checks passed. They cover malformed syntax, a duplicate required element, an unsupported version, invalid Case Input and action references, duplicate action IDs, and invalid action probabilities. This includes probabilities outside the allowed range that would round to 0 or 1. Each rejected build exited with a cause-specific diagnostic and left the requested output directory absent.
+- The original 99/1 fixture built successfully and type checking passed. All 14 tests passed in the full suite, including the offline browser checks for the relocated app and the 95/5 variant. A temporary model using `99e-2` and `.01` also built successfully.

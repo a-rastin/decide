@@ -4,11 +4,15 @@
 
 **Blocked by:** [01 — Show the six-week follow-up in an offline app](01-show-the-six-week-follow-up-offline.md).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Document the supported Decide XML schema version and model invariants for structure, references, and the mutually exclusive action distribution.
-- [ ] Validate the XML against that contract before deriving the browser representation or generating the app.
-- [ ] Automated checks invoke the public build command with malformed XML, structurally invalid XML, invalid references, an unsupported schema version, and structurally valid XML with an invalid action distribution. Each run exits unsuccessfully, identifies the cause, and generates no new app from the rejected model.
-- [ ] The original fixture still builds with the same command. Record the reproduction commands and results.
+- [x] Document the supported Decide XML schema version and model invariants for structure, references, and the mutually exclusive action distribution.
+- [x] Validate the XML against that contract before deriving the browser representation or generating the app.
+- [x] Automated checks invoke the public build command with malformed XML, structurally invalid XML, invalid references, an unsupported schema version, and structurally valid XML with an invalid action distribution. Each run exits unsuccessfully, identifies the cause, and generates no new app from the rejected model.
+- [x] The original fixture still builds with the same command. Record the reproduction commands and results.
 
 [Phase 1 requirements](../../../dev-docs/2026-11-21-prove-offline-path/requirements.md) · [Merge criteria](../../../dev-docs/2026-11-21-prove-offline-path/validation.md)
+
+## Answer
+
+The build enforces the [Decide XML schema version 1](../../../dev-docs/2026-11-21-prove-offline-path/xml-model.md) before generating an app. The [Task 04 verification record](../../../dev-docs/2026-11-21-prove-offline-path/validation.md#task-04-verification) documents the passing CLI rejection checks and original fixture build.

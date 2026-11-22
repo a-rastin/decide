@@ -37,5 +37,10 @@ async function generateApp(modelPath: string, outputPath: string) {
 }
 
 const [modelPath = "fixtures/six-week-follow-up/model.xml", outputPath = "dist"] = process.argv.slice(2);
-await generateApp(modelPath, outputPath);
-console.log(`Generated ${resolve(outputPath, "index.html")}`);
+try {
+  await generateApp(modelPath, outputPath);
+  console.log(`Generated ${resolve(outputPath, "index.html")}`);
+} catch (error) {
+  console.error(`Build failed for ${modelPath}: ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+}
