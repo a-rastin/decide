@@ -25,3 +25,20 @@ Open the generated `index.html` via `file://` in a browser with networking disab
 ## Ready to merge when
 
 The build and offline browser checks pass, reviewers can reproduce them from the documented commands, and the implementation review includes the outcomes and identifies any manual checks. No failures affecting this phase’s exit check are deferred. No agent-host smoke test or later-phase feature is required for this merge.
+
+## Task 01 verification
+
+Run from a clean checkout with Node.js 24 or later.
+
+```sh
+npm ci
+npm run build
+npx playwright install chromium
+npm run typecheck
+npm test
+```
+
+- A clean checkout of the implementation files passed these commands with Node.js 24.22.0, npm 12.2.1, and Playwright Chromium 153.0.8010.12. The default build produced `dist/index.html`, `model.xml`, `app.js`, and `app.css`. npm warned that the esbuild postinstall script was blocked. The locked platform binary was available and the build succeeded.
+- Both browser tests passed. Chromium opened the public build output through `file://` with networking disabled and observed zero network requests. Selecting **Yes** showed the six-week guidance, source condition, citation, convention, and **1%** score before and after moving the entire output folder.
+- The second test built a temporary 95/5 XML model with the same app code. The resulting app displayed **5%** for the same case. The checked-in fixture retains 99/1.
+- The initial browser test failed before the build entry point existed and passed after the implementation. A manual review of a screenshot from the offline Playwright run confirmed that the research-only notice and the styled, selected HeroUI radio option were visible.

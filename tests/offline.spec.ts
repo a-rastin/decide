@@ -1,0 +1,80 @@
+import { execFileSync } from "node:child_process";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { expect, test, type Browser } from "@playwright/test";
+
+const fixture = "fixtures/six-week-follow-up/model.xml";
+
+function buildApp(model: string, output: string) {
+  const npm = process.env.npm_execpath;
+  if (!npm) throw new Error("Run the offline checks with npm test");
+  execFileSync(process.execPath, [npm, "run", "build", "--", model, output], { stdio: "pipe" });
+}
+
+async function checkOfflineApp(browser: Browser, output: string, score: string) {
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  try {
+    const networkRequests: string[] = [];
+    const pageErrors: string[] = [];
+    context.on("request", (request) => {
+      const url = new URL(request.url());
+      if (!["file:", "data:", "blob:"].includes(url.protocol)) {
+        networkRequests.push(url.href);
+      }
+    });
+    const page = await context.newPage();
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("websocket", (socket) => networkRequests.push(socket.url()));
+
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    await expect(page.getByText("Research only. Do not use for clinical care.")).toBeVisible();
+
+    const input = page.getByRole("radiogroup", { name: "Were all baseline checks completed?" });
+    await expect(input).toBeVisible();
+    await input.getByText("Yes", { exact: true }).click();
+    await expect(input.getByRole("radio", { name: "Yes" })).toBeChecked();
+
+    await expect(page.getByRole("heading", { name: "Recheck at six weeks" })).toBeVisible();
+    await expect(page.getByText("All baseline checks were completed.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Synthetic Follow-up Note §1", { exact: true })).toBeVisible();
+    await expect(page.getByText(score, { exact: true })).toBeVisible();
+    await expect(page.getByText("Do-Not-Consider Score", { exact: true })).toBeVisible();
+    await expect(page.getByText("Research Modeling Convention", { exact: true })).toBeVisible();
+    await expect(page.getByText(/modeled support for leaving this action out of consideration/)).toBeVisible();
+    await expect(page.getByText(/does not estimate a clinical outcome/)).toBeVisible();
+
+    expect(pageErrors).toEqual([]);
+    expect(networkRequests).toEqual([]);
+  } finally {
+    await context.close();
+  }
+}
+
+test("shows six-week guidance offline before and after relocating the app", async ({ browser }, testInfo) => {
+  const original = testInfo.outputPath("app");
+  const relocated = testInfo.outputPath("relocated app");
+  buildApp(fixture, original);
+
+  expect(await readFile(join(original, "model.xml"))).toEqual(await readFile(fixture));
+  await checkOfflineApp(browser, original, "1%");
+
+  await rename(original, relocated);
+  await checkOfflineApp(browser, relocated, "1%");
+});
+
+test("uses the supplied XML to score the same case at 95/5", async ({ browser }, testInfo) => {
+  const variant = testInfo.outputPath("variant.xml");
+  const output = testInfo.outputPath("app");
+  const xml = await readFile(fixture, "utf8");
+  const variantXml = xml
+    .replace('probability="0.99"', 'probability="0.95"')
+    .replace('probability="0.01"', 'probability="0.05"');
+
+  await mkdir(testInfo.outputDir, { recursive: true });
+  await writeFile(variant, variantXml);
+  buildApp(variant, output);
+
+  expect(await readFile(join(output, "model.xml"), "utf8")).toEqual(variantXml);
+  await checkOfflineApp(browser, output, "5%");
+});

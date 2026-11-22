@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<decide-model version="1">
+  <case-input id="baseline-checks" label="Were all baseline checks completed?">
+    <value id="yes" label="Yes" />
+    <value id="no" label="No" />
+  </case-input>
+  <clinical-decision title="Follow-up timing">
+    <applicability input="baseline-checks" value="yes">
+      <source-condition>All baseline checks were completed.</source-condition>
+      <citation>Synthetic Follow-up Note §1</citation>
+    </applicability>
+    <action-distribution guidance="recheck">
+      <research-modeling-convention>The source gives a single explicit action when the condition holds. The model assigns most of the support to that action and the remainder to deferring the timing decision.</research-modeling-convention>
+      <action id="recheck" label="Recheck at six weeks" probability="0.99" />
+      <action id="defer" label="Defer the timing decision" probability="0.01" />
+    </action-distribution>
+  </clinical-decision>
+</decide-model>
