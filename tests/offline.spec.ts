@@ -6,26 +6,88 @@ import { buildApp } from "./build-app.ts";
 
 const fixture = "fixtures/six-week-follow-up/model.xml";
 
-test("mixed build shows partial status and excludes failed guidance offline", async ({ browser }, testInfo) => {
+test("mixed build preserves verified guidance offline after relocation", async ({ browser }, testInfo) => {
   const output = testInfo.outputPath("mixed");
+  const relocated = testInfo.outputPath("relocated mixed");
   const run = buildApp("fixtures/mixed-decisions/model.xml", output, [
     "--inventory", "fixtures/mixed-decisions/inventory.json",
     "--cases", "fixtures/mixed-decisions/cases.json",
   ]);
   expect(run.status, run.stderr).toBe(0);
+  await checkMixedOffline(browser, output);
+  await rename(output, relocated);
+  await checkMixedOffline(browser, relocated);
+});
+
+async function checkMixedOffline(browser: Browser, output: string) {
   const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  const requests: string[] = [];
+  const errors: string[] = [];
+  context.on("request", (request) => {
+    if (!["file:", "data:", "blob:"].includes(new URL(request.url()).protocol)) requests.push(request.url());
+  });
   try {
     const page = await context.newPage();
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("websocket", (socket) => requests.push(socket.url()));
     await page.goto(pathToFileURL(join(output, "index.html")).href);
     await expect(page.getByText("Partial build: some decisions or source sections are not included.")).toBeVisible();
     await expect(page.getByText(/Research only/)).toBeVisible();
+    await expect(page.getByRole("radiogroup", { name: "Choose a topic or scenario" })).toBeVisible();
+    await expect(page.getByText("Synthetic Case Input", { exact: true })).toHaveCount(0);
+    await page.getByText("Readiness", { exact: true }).first().click();
+    await page.getByText("Routine review", { exact: true }).first().click();
+    const input = page.getByRole("radiogroup", { name: "Is the checklist complete?" });
+    await expect(input).toBeVisible();
+    await expect(page.getByLabel("Synthetic marker (units)")).toHaveCount(0);
+    const yes = input.getByRole("radio", { name: "Yes" });
+    await input.getByText("Yes", { exact: true }).click();
+    await expect(yes).toBeChecked();
+    await expect(page.getByRole("heading", { name: "Schedule a routine review" })).toBeVisible();
+    await expect(page.getByText("The initial checklist is complete.")).toBeVisible();
+    await expect(page.getByText("Synthetic Monitoring Note §1")).toBeVisible();
+    await expect(page.getByText("10%", { exact: true })).toBeVisible();
+    await expect(page.getByText(/does not estimate a clinical outcome/)).toBeVisible();
+    await page.getByText("Information pack", { exact: true }).first().click();
+    await expect(page.getByRole("heading", { name: "Offer the information pack" })).toBeVisible();
+    await input.getByText("No", { exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Guidance does not apply" })).toBeVisible();
+    await expect(page.getByText("Unmet source condition")).toBeVisible();
+    await expect(page.getByText("Do-Not-Consider Score")).toHaveCount(0);
+    await input.getByText("Unknown", { exact: true }).click();
+    await expect(page.getByRole("region", { name: "Decision result" }).getByText("Is the checklist complete?")).toBeVisible();
+    await expect(page.getByText("Do-Not-Consider Score")).toHaveCount(0);
     await page.getByText("Monitoring", { exact: true }).first().click();
     await expect(page.getByText("Marker check", { exact: true })).toBeVisible();
     await expect(page.getByText("Equipment inspection", { exact: true })).toHaveCount(0);
+    await page.getByText("Marker check", { exact: true }).first().click();
+    await expect(input).toHaveCount(0);
+    const marker = page.getByLabel("Synthetic marker (units)");
+    await expect(marker).toBeVisible();
+    await marker.fill("9.99");
+    await expect(page.getByRole("heading", { name: "Guidance does not apply" })).toBeVisible();
+    await marker.fill("10");
+    await expect(page.getByRole("heading", { name: "Repeat the marker check" })).toBeVisible();
+    await expect(page.getByText("5%", { exact: true })).toBeVisible();
+    await expect(page.getByText("The synthetic marker is at least 10 units.")).toBeVisible();
+    await expect(page.getByText("Synthetic Monitoring Note §2")).toBeVisible();
+    await marker.fill("10.01");
+    await expect(page.getByRole("heading", { name: "Repeat the marker check" })).toBeVisible();
+    await marker.fill("oops");
+    await expect(page.getByRole("alert")).toHaveText("Invalid numeric Case Input");
+    await expect(marker).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByText("Do-Not-Consider Score")).toHaveCount(0);
+    await marker.fill("");
+    await expect(page.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
+    await expect(page.getByText("Do-Not-Consider Score")).toHaveCount(0);
+    const radius = await marker.evaluate((element) => getComputedStyle(element).borderRadius);
+    expect(parseFloat(radius)).toBeGreaterThan(0);
+    expect(errors).toEqual([]);
+    expect(requests).toEqual([]);
   } finally {
     await context.close();
   }
-});
+}
 
 function expectSuccessfulBuild(model: string, output: string) {
   const run = buildApp(model, output);
@@ -132,6 +194,7 @@ test("routes verified categorical decisions and reuses only shared Case Input ID
   const model = testInfo.outputPath("categorical.xml");
   const cases = testInfo.outputPath("cases.json");
   const output = testInfo.outputPath("app");
+  const relocated = testInfo.outputPath("relocated categorical app");
   const excludedOutput = testInfo.outputPath("excluded-app");
   const xml = (await readFile("fixtures/mixed-decisions/model.xml", "utf8"))
     .replace(/  <case-input id="marker".*\/>\n/, "")
@@ -157,22 +220,25 @@ test("routes verified categorical decisions and reuses only shared Case Input ID
     await page.goto(pathToFileURL(join(excludedOutput, "index.html")).href);
     await expect(page.getByRole("radio", { name: "Monitoring" })).toHaveCount(0);
     await expect(page.getByText("Equipment inspection", { exact: true })).toHaveCount(0);
-    await page.goto(pathToFileURL(join(output, "index.html")).href);
-    await expect(page.getByRole("radiogroup", { name: "Is the checklist complete?" })).toHaveCount(0);
-    await page.getByText("Readiness", { exact: true }).first().click();
-    await page.getByText("Routine review", { exact: true }).first().click();
-    await page.getByText("Yes", { exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Schedule a routine review" })).toBeVisible();
-    await page.getByText("Information pack", { exact: true }).first().click();
-    await expect(page.getByRole("heading", { name: "Offer the information pack" })).toBeVisible();
-    await page.getByText("Monitoring", { exact: true }).first().click();
-    await page.getByText("Equipment inspection", { exact: true }).first().click();
-    await expect(page.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
-    await page.getByText("No", { exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Guidance does not apply" })).toBeVisible();
-    await page.getByText("Readiness", { exact: true }).first().click();
-    await page.getByText("Routine review", { exact: true }).first().click();
-    await expect(page.getByRole("heading", { name: "Schedule a routine review" })).toBeVisible();
+    for (const location of [output, relocated]) {
+      if (location === relocated) await rename(output, relocated);
+      await page.goto(pathToFileURL(join(location, "index.html")).href);
+      await expect(page.getByRole("radiogroup", { name: "Is the checklist complete?" })).toHaveCount(0);
+      await page.getByText("Readiness", { exact: true }).first().click();
+      await page.getByText("Routine review", { exact: true }).first().click();
+      await page.getByText("Yes", { exact: true }).click();
+      await expect(page.getByRole("heading", { name: "Schedule a routine review" })).toBeVisible();
+      await page.getByText("Information pack", { exact: true }).first().click();
+      await expect(page.getByRole("heading", { name: "Offer the information pack" })).toBeVisible();
+      await page.getByText("Monitoring", { exact: true }).first().click();
+      await page.getByText("Equipment inspection", { exact: true }).first().click();
+      await expect(page.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
+      await page.getByText("No", { exact: true }).click();
+      await expect(page.getByRole("heading", { name: "Guidance does not apply" })).toBeVisible();
+      await page.getByText("Readiness", { exact: true }).first().click();
+      await page.getByText("Routine review", { exact: true }).first().click();
+      await expect(page.getByRole("heading", { name: "Schedule a routine review" })).toBeVisible();
+    }
     expect(requests).toEqual([]);
   } finally {
     await context.close();

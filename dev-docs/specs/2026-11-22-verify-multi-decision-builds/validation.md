@@ -37,3 +37,20 @@ npm test
 ```
 
 `npm run test:validation` runs Vitest alone; `npm run test:offline` runs Playwright alone. Also run the documented mixed-fixture build command and inspect both generated reports. Record command results and any manual checks in the implementation review. All checklist items must pass; no Phase 3 feature or agent-host smoke test is required for this merge.
+
+## Implementation verification — 2026-11-22
+
+- With Node.js 24.22.0 and existing installed dependencies and Chromium,
+  `npm run typecheck` passed and `npm test` passed (38 Vitest and 5 Playwright
+  tests). This was not a clean-checkout installation check.
+- The documented mixed-fixture build command succeeded. Inspection of its
+  reports confirmed three delivered decisions, the excluded equipment decision
+  with its expected/actual mismatch, the unresolved later review, the
+  unprocessed appendix, and partial status. The test report explicitly limits
+  itself to build-time synthetic checks.
+- Playwright exercised the original and relocated mixed build through
+  `file://` with offline mode and service workers blocked, and observed no
+  network requests or page errors. A separate corrected-cases fixture variant
+  exercised same-labeled distinct inputs in both locations; the original
+  fixture's deliberate mismatch remained unchanged.
+- These checks establish synthetic software behavior, not clinical validity.

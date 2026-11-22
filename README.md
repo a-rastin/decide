@@ -6,7 +6,7 @@
 
 ## Status
 
-The first implementation builds a portable app for the synthetic six-week follow-up example. The full release requirements and project vocabulary are documented in the [user specification](dev-docs/user-specification.md) and [glossary](GLOSSARY.md).
+The current implementation builds portable apps from hand-authored XML for the synthetic six-week and multi-decision examples. Automated source discovery and the remaining release features are not yet implemented. The full release requirements and project vocabulary are documented in the [user specification](dev-docs/user-specification.md) and [glossary](GLOSSARY.md).
 
 ## Build the six-week follow-up example
 
@@ -31,6 +31,40 @@ To build a copy with a different model or destination, pass the XML path and out
 npm run build -- fixtures/six-week-follow-up/model.xml path/to/output
 ```
 
+## Build the mixed multi-decision example
+
+From the repository root, after `npm ci`, run:
+
+```sh
+npm run build -- fixtures/mixed-decisions/model.xml path/to/output \
+  --inventory fixtures/mixed-decisions/inventory.json \
+  --cases fixtures/mixed-decisions/cases.json
+```
+
+Open the printed `index.html` directly, including after moving the entire output
+folder. The build ships the original XML, local app assets, and two separate
+reports:
+
+- `coverage-report.md` reconciles the source inventory, distinguishing
+  verified and delivered decisions, modeled but excluded decisions, unresolved
+  decisions, and unreadable or unprocessed sections. The app is marked partial
+  when coverage is incomplete.
+- `test-report.md` records build-time synthetic verification by modeled
+  decision, including expected and actual results for failures. It does not
+  claim browser tests ran or establish source coverage.
+
+The fixture intentionally fails an equipment verification case, leaving that
+decision out of the app; it also has an unresolved decision and an unprocessed
+section. The other three decisions verify. A version 2 build requires `--cases`;
+`--inventory` supplies source coverage and the separate reports. If no decision
+verifies, no app is published. See the [input contract](dev-docs/specs/2026-11-22-verify-multi-decision-builds/inputs.md)
+for model and case requirements.
+
+As with the six-week build, reruns preserve an existing destination by default:
+the command prints the new suffixed path. Pass `--replace` with the arguments
+above only when replacement is intended; failed builds leave the previous
+artifact untouched.
+
 ## Run the tests
 
 Run `npm run test:validation` to check XML build validation and case evaluation with Vitest. This suite needs no browser. For offline browser checks, install Playwright's Chromium and any browser system dependencies for your platform.
@@ -41,7 +75,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs both suites. Use `npm run test:offline` to run just the Playwright checks. They exercise all three case states from disk with networking disabled, repeat the checks after moving the app, and verify scoring with a temporary 95/5 XML variant. See the [Phase 1 validation record](dev-docs/specs/2026-11-21-prove-offline-path/validation.md).
+`npm test` runs both suites. Use `npm run test:offline` to run just the Playwright checks. They exercise case states, routing, and numeric thresholds from disk with networking disabled, repeat checks after moving the app, and verify scoring with a temporary 95/5 XML variant. See the [Phase 1 validation record](dev-docs/specs/2026-11-21-prove-offline-path/validation.md) and [Phase 2 validation record](dev-docs/specs/2026-11-22-verify-multi-decision-builds/validation.md).
 
 ## How it is meant to work
 
