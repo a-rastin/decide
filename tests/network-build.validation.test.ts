@@ -118,3 +118,56 @@ test("excludes only the routed decision with a mismatched verification case", as
   expect(report).toMatch(/first-review: excluded[\s\S]*Case first-both-yes: expected/);
   expect(report).toMatch(/second-review: verified/);
 }, 30_000);
+
+test("verifies exact source and observation thresholds from authored decimal cases", async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), "decide-numeric-network-"));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const fixture = "fixtures/numeric-review";
+  const output = join(directory, "app");
+  const run = buildApp(`${fixture}/model.xml`, output, ["--cases", `${fixture}/cases.json`, "--inventory", `${fixture}/inventory.json`]);
+  expect(run.status, run.stderr).toBe(0);
+  expect(await readFile(join(output, "model.xml"))).toEqual(await readFile(`${fixture}/model.xml`));
+  const report = await readFile(join(output, "test-report.md"), "utf8");
+  expect(report).toMatch(/review-reading: verified/);
+  for (const id of ["below-source", "at-source", "above-source", "below-model", "at-model", "above-model", "unanswered"]) {
+    expect(report).toContain(`Case ${id}: passed`);
+  }
+}, 30_000);
+
+test("does not verify a numeric decision that skips exact equality at a model threshold", async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), "decide-numeric-coverage-"));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const fixture = "fixtures/numeric-review";
+  const cases = join(directory, "cases.json");
+  const output = join(directory, "app");
+  const authored = await readFile(`${fixture}/cases.json`, "utf8");
+  await writeFile(cases, authored.split("\n").filter((line) => !line.includes('"at-model"')).join("\n"));
+  const run = buildApp(`${fixture}/model.xml`, output, ["--cases", cases, "--inventory", `${fixture}/inventory.json`]);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(/No verified decisions: review-reading: Insufficient coverage: missing case at threshold 0\.3 for Case Input "reading"/);
+  await expect(stat(output)).rejects.toHaveProperty("code", "ENOENT");
+}, 30_000);
+
+test.each([
+  ["unmapped equality", '<range min="0.3" max="3e-1" min-inclusive="true" max-inclusive="true" state="boundary" />', "", /Gap in numeric ranges/],
+  ["decimal gap", '<range max="0.3"', '<range max="0.29999999999999999999"', /Gap in numeric ranges/],
+  ["double-mapped equality", '<range max="0.3"', '<range max="0.3" max-inclusive="true"', /Overlap in numeric ranges/],
+  ["decimal overlap", '<range max="0.3"', '<range max="0.30000000000000000001"', /Overlap in numeric ranges/],
+  ["bounded domain", '<range min="3e-1" state="high"', '<range min="3e-1" max="1" state="high"', /Gap in numeric ranges/],
+  ["unknown state", 'state="boundary"', 'state="unknown"', /Invalid numeric state mapping/],
+  ["empty interval", 'min-inclusive="true" max-inclusive="true"', 'min-inclusive="true" max-inclusive="false"', /Empty or inverted numeric range/],
+  ["invalid bound", '<range max="0.3"', '<range max="NaN"', /Invalid numeric range max/],
+] as const)("rejects numeric partitions with %s before replacing an existing artifact", async (_name, original, replacement, diagnostic) => {
+  const fixture = "fixtures/numeric-review";
+  const authored = await readFile(`${fixture}/model.xml`, "utf8");
+  const invalid = join(directory, "invalid.xml");
+  const output = join(directory, "app");
+  const changed = authored.replace(original, replacement);
+  expect(changed).not.toBe(authored);
+  await writeFile(invalid, changed);
+  const run = buildApp(invalid, output, ["--cases", `${fixture}/cases.json`, "--inventory", `${fixture}/inventory.json`, "--replace"]);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(diagnostic);
+  expect(await readArtifact(output)).toEqual(before);
+  expect((await readdir(directory)).sort()).toEqual(["app", "invalid.xml"]);
+}, 15_000);

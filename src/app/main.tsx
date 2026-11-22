@@ -13,6 +13,10 @@ const scoreFormat = new Intl.NumberFormat("en", {
 const knownCasePrefix = "known:";
 const unknownCaseOption = "unknown";
 
+function inputLabel(input: { label: string } | { label: string; unit: string }) {
+  return "unit" in input ? `${input.label} (${input.unit})` : input.label;
+}
+
 function App({ model, values, setValue, navigation }: {
   model: DecideModel | RoutedDecision;
   values: Record<string, string>;
@@ -25,7 +29,7 @@ function App({ model, values, setValue, navigation }: {
   const result = "caseInputs" in model ? evaluateNetworkDecision(model.decision, values)
     : evaluateDecision(model.decision, valueFor(model.caseInput.id) || null);
   const convention = "convention" in decision ? decision.convention : decision.distribution.convention;
-  const inputLabels = (ids: string[]) => caseInputs.filter(({ id }) => ids.includes(id)).map(({ label }) => label);
+  const inputLabels = (ids: string[]) => caseInputs.filter(({ id }) => ids.includes(id)).map(inputLabel);
   const applicable = result.status === "applicable";
 
   return (
@@ -53,9 +57,10 @@ function App({ model, values, setValue, navigation }: {
                 const selected = valueFor(caseInput.id) ?? "";
                 return "type" in caseInput ? (
                   <label key={caseInput.id} className="block font-medium">
-                    {caseInput.label} ({caseInput.unit})
+                    {inputLabel(caseInput)}
                     <input type="text" inputMode="decimal" value={selected} onChange={(event) => setValue(caseInput.id, event.target.value)}
-                      aria-invalid={result.status === "invalid"} className="mt-3 block w-full rounded-lg border border-slate-300 p-3" />
+                      aria-invalid={result.status === "invalid" && (!("inputs" in result) || result.inputs.includes(caseInput.id))}
+                      className="mt-3 block w-full rounded-lg border border-slate-300 p-3" />
                   </label>
                 ) : (
                   <RadioGroup key={caseInput.id} name={caseInput.id} className="gap-3"

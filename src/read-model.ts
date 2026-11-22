@@ -1,7 +1,7 @@
 import { SaxesParser } from "saxes";
 import {
-  caseValueDisplayLabel, decimalLiteral, type CategoricalCaseInput, type DecideModel,
-  type NetworkCondition, type NetworkDecision, type NetworkNode, type RoutedDecision, type RoutedModel,
+  caseValueDisplayLabel, compareDecimals, decimalLiteral, type DecideModel,
+  type NetworkCaseInput, type NetworkCondition, type NetworkDecision, type NetworkNode, type NumericRange, type RoutedDecision, type RoutedModel,
 } from "./model.ts";
 
 interface XmlElement {
@@ -359,27 +359,85 @@ function readNetwork(network: XmlElement) {
   return { id, byId, nodes: [...ordered.values()] };
 }
 
-function readNetworkCondition(element: XmlElement, inputs: CategoricalCaseInput[]): NetworkCondition {
-  if (element.name === "equals") {
-    validateElement(element, ["input", "value"]);
+const networkPredicates = ["equals", "compare", "all", "any"];
+
+function readNetworkCondition(element: XmlElement, inputs: NetworkCaseInput[]): NetworkCondition {
+  if (element.name === "equals" || element.name === "compare") {
+    validateElement(element, element.name === "equals" ? ["input", "value"] : ["input", "operator", "threshold"]);
     const input = attribute(element, "input");
-    const value = attribute(element, "value");
     const entry = inputs.find(({ id }) => id === input);
     if (!entry) throw new Error(`Applicability references unbound Case Input "${input}"`);
+    if (element.name === "compare") {
+      if (!("type" in entry)) throw new Error(`Numeric comparison requires a numeric Case Input: "${input}"`);
+      const operator = attribute(element, "operator");
+      if (operator !== "lt" && operator !== "lte" && operator !== "eq" && operator !== "gt" && operator !== "gte") {
+        throw new Error(`Invalid numeric operator "${operator}"`);
+      }
+      const threshold = attribute(element, "threshold");
+      if (!decimalLiteral.test(threshold)) throw new Error(`Invalid numeric threshold "${threshold}"`);
+      return { kind: "compare", input, operator, threshold };
+    }
+    if (!("values" in entry)) throw new Error(`Categorical equality requires a categorical Case Input: "${input}"`);
+    const value = attribute(element, "value");
     if (!entry.values.some(({ id }) => id === value)) throw new Error(`Applicability references unknown value "${value}" for Case Input "${input}"`);
     return { kind: "equals", input, value };
   }
   if (element.name !== "all" && element.name !== "any") throw new Error(`Unexpected predicate <${element.name}>`);
-  validateElement(element, [], ["all", "any", "equals"]);
+  validateElement(element, [], networkPredicates);
   if (element.children.length < 2) throw new Error(`<${element.name}> requires at least two predicates`);
   return { kind: element.name, operands: element.children.map((operand) => readNetworkCondition(operand, inputs)) };
 }
 
+function readNumericRanges(observe: XmlElement, input: string, states: { id: string }[]): NumericRange[] {
+  const ranges = childrenNamed(observe, "range").map((range) => {
+    validateElement(range, ["min", "max", "min-inclusive", "max-inclusive", "state"]);
+    function endpoint(name: "min" | "max") {
+      const value = range.attributes[name];
+      const inclusive = range.attributes[`${name}-inclusive`];
+      if ((value !== undefined && !decimalLiteral.test(value)) ||
+          (inclusive !== undefined && (value === undefined || (inclusive !== "true" && inclusive !== "false")))) {
+        throw new Error(`Invalid numeric range ${name} for Case Input "${input}"`);
+      }
+      return { value, inclusive: inclusive === "true" };
+    }
+    const { value: min, inclusive: minInclusive } = endpoint("min");
+    const { value: max, inclusive: maxInclusive } = endpoint("max");
+    if (min !== undefined && max !== undefined) {
+      const order = compareDecimals(min, max);
+      if (order > 0 || (order === 0 && !(minInclusive && maxInclusive))) {
+        throw new Error(`Empty or inverted numeric range for Case Input "${input}"`);
+      }
+    }
+    const state = attribute(range, "state");
+    if (!states.some(({ id }) => id === state)) throw new Error(`Invalid numeric state mapping "${state}" for Case Input "${input}"`);
+    return { min, max, minInclusive, maxInclusive, state };
+  }).sort((a, b) => a.min === undefined ? (b.min === undefined ? 0 : -1)
+    : b.min === undefined ? 1 : compareDecimals(a.min, b.min) || Number(b.minInclusive) - Number(a.minInclusive));
+
+  const gap = () => new Error(`Gap in numeric ranges for Case Input "${input}"`);
+  const overlap = () => new Error(`Overlap in numeric ranges for Case Input "${input}"`);
+  if (!ranges.length || ranges[0].min !== undefined) throw gap();
+  for (let i = 1; i < ranges.length; i++) {
+    const previous = ranges[i - 1], current = ranges[i];
+    if (previous.max === undefined || current.min === undefined) throw overlap();
+    const order = compareDecimals(previous.max, current.min);
+    if (order > 0 || (order === 0 && previous.maxInclusive && current.minInclusive)) throw overlap();
+    if (order < 0 || (order === 0 && !previous.maxInclusive && !current.minInclusive)) throw gap();
+  }
+  if (ranges.at(-1)!.max !== undefined) throw gap();
+  return ranges;
+}
+
 function readNetworkModel(root: XmlElement): RoutedModel {
   validateElement(root, ["version"], ["case-input", "network", "route"]);
-  const inputs = childrenNamed(root, "case-input").map((input) => {
+  const inputs = childrenNamed(root, "case-input").map((input): NetworkCaseInput => {
+    const type = attribute(input, "type");
+    if (type === "numeric") {
+      validateElement(input, ["id", "label", "type", "unit"]);
+      return { ...labeledValue(input), type, unit: attribute(input, "unit") };
+    }
+    if (type !== "categorical") throw new Error(`Unsupported Case Input type "${type}"`);
     validateElement(input, ["id", "label", "type"], ["value"]);
-    if (attribute(input, "type") !== "categorical") throw new Error("Version 3 currently supports only categorical Case Inputs");
     return { ...labeledValue(input), values: readCaseValues(input) };
   });
   const networks = childrenNamed(root, "network").map(readNetwork);
@@ -401,13 +459,13 @@ function readNetworkModel(root: XmlElement): RoutedModel {
     const guidance = attribute(element, "guidance");
     const action = node.states.find((state) => state.id === guidance);
     if (!action) throw new Error(`Decision "${id}" references unknown guidance state "${guidance}"`);
-    const caseInputs: CategoricalCaseInput[] = [];
+    const caseInputs: NetworkCaseInput[] = [];
     const observedNodes = new Set<string>();
     const bindings = childrenNamed(element, "observe").map((observe): NetworkDecision["inputs"][number] => {
-      validateElement(observe, ["input", "node", "required"], ["map"]);
       const inputId = attribute(observe, "input");
       const input = inputs.find((entry) => entry.id === inputId);
       if (!input) throw new Error(`Decision "${id}" references unknown Case Input "${inputId}"`);
+      validateElement(observe, ["input", "node", "required"], ["type" in input ? "range" : "map"]);
       const nodeId = attribute(observe, "node");
       const observed = network.byId.get(nodeId);
       if (!observed) throw new Error(`Decision "${id}" references unknown observed node "${nodeId}"`);
@@ -415,6 +473,9 @@ function readNetworkModel(root: XmlElement): RoutedModel {
       observedNodes.add(nodeId);
       const required = "required" in observe.attributes ? attribute(observe, "required") : "false";
       if (required !== "true" && required !== "false") throw new Error(`Invalid required flag for Case Input "${inputId}"`);
+      caseInputs.push(input);
+      const binding = { id: inputId, node: nodeId, required: required === "true" };
+      if ("type" in input) return { ...binding, ranges: readNumericRanges(observe, inputId, observed.states) };
       const mapping = new Map<string, string>();
       for (const entry of childrenNamed(observe, "map")) {
         validateElement(entry, ["value", "state"]);
@@ -426,13 +487,12 @@ function readNetworkModel(root: XmlElement): RoutedModel {
         mapping.set(value, state);
       }
       if (mapping.size !== input.values.length) throw new Error(`Incomplete state mapping for Case Input "${inputId}"`);
-      caseInputs.push(input);
       const values = input.values.map(({ id }) => id);
-      return { id: inputId, values, node: nodeId, required: required === "true", states: values.map((value) => mapping.get(value)!) };
+      return { ...binding, values, states: values.map((value) => mapping.get(value)!) };
     });
     validateUniqueIds(bindings, "observe input");
     const applicability = child(element, "applicability");
-    validateElement(applicability, [], ["equals", "all", "any", "source-condition", "citation"]);
+    validateElement(applicability, [], [...networkPredicates, "source-condition", "citation"]);
     const predicates = applicability.children.filter(({ name }) => name !== "source-condition" && name !== "citation");
     if (predicates.length !== 1) throw new Error("Expected exactly one predicate in <applicability>");
     return {

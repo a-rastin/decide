@@ -13,11 +13,23 @@ export interface NetworkNode {
 
 export type NetworkCondition =
   | { kind: "equals"; input: string; value: string }
+  | { kind: "compare"; input: string; operator: NumericOperator; threshold: string }
   | { kind: "all" | "any"; operands: NetworkCondition[] };
+
+type NumericOperator = "lt" | "lte" | "eq" | "gt" | "gte";
+export type NumericRange = {
+  min?: string;
+  max?: string;
+  minInclusive: boolean;
+  maxInclusive: boolean;
+  state: string;
+};
 
 export interface NetworkDecision {
   action: { node: string; id: string; label: string };
-  inputs: { id: string; values: string[]; node: string; required: boolean; states?: string[] }[];
+  inputs: ({ id: string; node: string; required: boolean } & (
+    { values: string[]; states?: string[] } | { ranges: NumericRange[] }
+  ))[];
   condition: NetworkCondition;
   nodes: NetworkNode[];
 }
@@ -28,18 +40,62 @@ type NetworkOutcome =
   | { status: "applicable"; action: ActionReference; doNotConsiderScore: number }
   | { status: "applicable"; action: ActionReference; scoreUnavailable: { reason: "missing"; inputs: string[] } | { reason: "zero-likelihood" } };
 
+function sourceThresholds(condition: NetworkCondition, id: string): string[] {
+  if ("operands" in condition) return condition.operands.flatMap((operand) => sourceThresholds(operand, id));
+  return condition.kind === "compare" && condition.input === id ? [condition.threshold] : [];
+}
+
+function orderedThresholds(values: string[]) {
+  return values.sort(compareDecimals).filter((value, i, sorted) => i === 0 || compareDecimals(sorted[i - 1], value) !== 0);
+}
+
+export function numericThresholds(decision: NetworkDecision, input: Extract<NetworkDecision["inputs"][number], { ranges: NumericRange[] }>) {
+  const thresholds = sourceThresholds(decision.condition, input.id);
+  for (const { min, max } of input.ranges) {
+    if (min !== undefined) thresholds.push(min);
+    if (max !== undefined) thresholds.push(max);
+  }
+  return orderedThresholds(thresholds);
+}
+
+function matchesComparison(order: number, operator: NumericOperator) {
+  return { lt: order < 0, lte: order <= 0, eq: order === 0, gt: order > 0, gte: order >= 0 }[operator];
+}
+
+function observedState(input: NetworkDecision["inputs"][number], value: string) {
+  if ("values" in input) {
+    const index = input.values.indexOf(value);
+    return index === -1 ? undefined : input.states?.[index] ?? value;
+  }
+  if (!decimalLiteral.test(value)) return undefined;
+  return input.ranges.find(({ min, max, minInclusive, maxInclusive }) =>
+    (min === undefined || matchesComparison(compareDecimals(value, min), minInclusive ? "gte" : "gt")) &&
+    (max === undefined || matchesComparison(compareDecimals(value, max), maxInclusive ? "lte" : "lt"))
+  )?.state;
+}
+
 /** Evaluate source applicability before using the decision's declared scoring evidence. */
 export function evaluateNetworkDecision(decision: NetworkDecision, values: Record<string, string | undefined>): NetworkOutcome {
-  const overrides: Record<string, string> = Object.create(null);
-  const valueFor = (id: string) => Object.hasOwn(overrides, id) ? overrides[id] : Object.hasOwn(values, id) ? values[id] : undefined;
+  type Candidate = string | ((threshold: string) => number);
+  const overrides = new Map<string, Candidate>();
+  const entered = new Map(decision.inputs.map((input) => {
+    const raw = Object.hasOwn(values, input.id) ? values[input.id] : undefined;
+    const value = "ranges" in input ? raw?.trim() : raw;
+    return [input.id, { value, state: value ? observedState(input, value) : undefined }];
+  }));
   type ConditionResult = { state: "true" | "false" | "missing" | "invalid"; inputs: string[] };
   function conditionResult(condition: NetworkCondition): ConditionResult {
-    if (condition.kind === "equals") {
-      const input = decision.inputs.find(({ id }) => id === condition.input)!;
-      const value = valueFor(input.id);
-      if (value === undefined || value === "") return { state: "missing", inputs: [input.id] };
-      if (!input.values.includes(value)) return { state: "invalid", inputs: [input.id] };
-      return { state: value === condition.value ? "true" : "false", inputs: [] };
+    if ("input" in condition) {
+      const id = condition.input;
+      const entry = entered.get(id)!;
+      const override = overrides.get(id);
+      const value = override ?? entry.value;
+      if (!value) return { state: "missing", inputs: [id] };
+      if (override === undefined && entry.state === undefined) return { state: "invalid", inputs: [id] };
+      const matches = condition.kind === "equals" ? value === condition.value
+        : matchesComparison(typeof value === "function" ? value(condition.threshold)
+          : compareDecimals(value, condition.threshold), condition.operator);
+      return { state: matches ? "true" : "false", inputs: [] };
     }
     const results = condition.operands.map(conditionResult);
     const decisive = condition.kind === "all" ? "false" : "true";
@@ -54,51 +110,60 @@ export function evaluateNetworkDecision(decision: NetworkDecision, values: Recor
   if (applicability.state === "false") return { status: "unmet" };
   if (applicability.state === "invalid") return { status: "invalid", inputs: applicability.inputs };
   if (applicability.state === "missing") {
+    const candidatesById = new Map<string, Candidate[]>(applicability.inputs.map((id) => {
+      const input = decision.inputs.find((input) => input.id === id)!;
+      if ("values" in input) return [id, input.values] as const;
+      const thresholds = orderedThresholds(sourceThresholds(decision.condition, id));
+      // Applicability is constant in each open interval and at each threshold.
+      // Use their order rather than rounding or constructing decimal midpoints.
+      return [id, Array.from({ length: 2 * thresholds.length + 1 }, (_, position) =>
+        (threshold: string) => Math.sign(position - (2 * thresholds.findIndex((value) => compareDecimals(value, threshold) === 0) + 1)))] as const;
+    }));
     // A repeated input can correlate predicates in different branches. Check
     // whether varying each unanswered input can actually change the outcome
     // while the other unanswered inputs have the same values.
     const relevant = applicability.inputs.filter((candidate) => {
       const others = applicability.inputs.filter((id) => id !== candidate);
-      const candidates = decision.inputs.find(({ id }) => id === candidate)!.values;
+      const candidates = candidatesById.get(candidate)!;
       function affects(index: number): boolean {
         const states = candidates.map((value) => {
-          overrides[candidate] = value;
+          overrides.set(candidate, value);
           return conditionResult(decision.condition).state;
         });
-        delete overrides[candidate];
+        overrides.delete(candidate);
         if (states.every((state) => state === "true") || states.every((state) => state === "false")) return false;
         if (index === others.length) return states.includes("true") && states.includes("false");
         const id = others[index];
-        for (const value of decision.inputs.find((input) => input.id === id)!.values) {
-          overrides[id] = value;
+        for (const value of candidatesById.get(id)!) {
+          overrides.set(id, value);
           if (affects(index + 1)) {
-            delete overrides[id];
+            overrides.delete(id);
             return true;
           }
         }
-        delete overrides[id];
+        overrides.delete(id);
         return false;
       }
       return affects(0);
     });
     if (relevant.length) return { status: "missing", inputs: relevant };
-    for (const id of applicability.inputs) overrides[id] = decision.inputs.find((input) => input.id === id)!.values[0];
+    for (const id of applicability.inputs) overrides.set(id, candidatesById.get(id)![0]);
     const settled = conditionResult(decision.condition).state;
-    for (const id of applicability.inputs) delete overrides[id];
+    overrides.clear();
     if (settled === "false") return { status: "unmet" };
   }
-  const invalid = decision.inputs.filter(({ id, values: allowed }) => {
-    const value = valueFor(id);
-    return value && !allowed.includes(value);
+  const invalid = decision.inputs.filter(({ id }) => {
+    const { value, state } = entered.get(id)!;
+    return value && state === undefined;
   }).map(({ id }) => id);
   if (invalid.length) return { status: "invalid", inputs: invalid };
   const action = { id: decision.action.id, label: decision.action.label };
-  const missing = decision.inputs.filter(({ id, required }) => required && !valueFor(id)).map(({ id }) => id);
+  const missing = decision.inputs.filter(({ id, required }) => required && !entered.get(id)!.value).map(({ id }) => id);
   if (missing.length) return { status: "applicable", action, scoreUnavailable: { reason: "missing", inputs: missing } };
   const evidence: Record<string, string> = Object.create(null);
   for (const input of decision.inputs) {
-    const value = valueFor(input.id);
-    if (value) evidence[input.node] = input.states?.[input.values.indexOf(value)] ?? value;
+    const state = entered.get(input.id)!.state;
+    if (state !== undefined) evidence[input.node] = state;
   }
   const posterior = inferPosterior(decision.nodes, decision.action.node, decision.action.id, evidence);
   return posterior === null
@@ -147,7 +212,7 @@ export interface DecideModel {
     id: string;
     label: string;
     values: CaseValue[];
-  } | { id: string; label: string; type: "numeric"; unit: string };
+  } | NumericCaseInput;
   decision: {
     title: string;
     applicability: ({
@@ -167,10 +232,12 @@ export interface DecideModel {
 }
 
 export type CategoricalCaseInput = { id: string; label: string; values: CaseValue[] };
+type NumericCaseInput = { id: string; label: string; type: "numeric"; unit: string };
+export type NetworkCaseInput = CategoricalCaseInput | NumericCaseInput;
 
 export interface NetworkModelDecision {
   id: string;
-  caseInputs: CategoricalCaseInput[];
+  caseInputs: NetworkCaseInput[];
   decision: NetworkDecision & {
     title: string;
     applicability: { condition: string; citation: string };

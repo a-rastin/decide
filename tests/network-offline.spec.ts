@@ -114,3 +114,45 @@ test("visibly labels a partially verified routed network and excludes failed gui
     await context.close();
   }
 });
+
+test("shows exact numeric source and model boundaries and distinguishes unavailable results offline", async ({ browser }, testInfo) => {
+  const fixture = "fixtures/numeric-review";
+  const output = testInfo.outputPath("numeric-app");
+  const run = buildApp(`${fixture}/model.xml`, output, ["--cases", `${fixture}/cases.json`, "--inventory", `${fixture}/inventory.json`]);
+  expect(run.status, run.stderr).toBe(0);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    const input = page.getByRole("textbox", { name: "Synthetic reading (points)" });
+    const result = page.getByRole("region", { name: "Decision result" });
+    const score = result.getByRole("heading", { name: "Do-Not-Consider Score" });
+    await expect(result.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
+    await expect(result.getByText("Synthetic reading (points)", { exact: true })).toBeVisible();
+    await expect(score).toHaveCount(0);
+
+    await input.fill("0.09999999999999999999");
+    await expect(result.getByRole("heading", { name: "Guidance does not apply" })).toBeVisible();
+    await expect(result.getByText("The synthetic reading is at least 0.1 points.")).toBeVisible();
+    await expect(score).toHaveCount(0);
+    for (const [value, expected] of [
+      ["1e-1", "80%"], ["0.10000000000000000001", "80%"], ["0.29999999999999999999", "80%"],
+      ["0.300", "50%"], ["0.30000000000000000001", "10%"], ["1e500", "10%"],
+    ]) {
+      await input.fill(value);
+      await expect(result.getByRole("heading", { name: "Review the synthetic reading" })).toBeVisible();
+      await expect(result.getByText("Synthetic Reading Note §1")).toBeVisible();
+      await expect(result.getByText(expected, { exact: true })).toBeVisible();
+    }
+    await input.fill("0.3 points");
+    await expect(result.getByRole("alert")).toHaveText("Invalid Case Input: Synthetic reading (points)");
+    await expect(input).toHaveAttribute("aria-invalid", "true");
+    await expect(score).toHaveCount(0);
+    await input.fill(" ");
+    await expect(result.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
+    await expect(input).toHaveAttribute("aria-invalid", "false");
+    await expect(score).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});

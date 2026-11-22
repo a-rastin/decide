@@ -1,9 +1,9 @@
-# Decide XML v3: categorical networks
+# Decide XML v3: categorical and numeric networks
 
-This initial v3 contract builds a synthetic Clinical Decision with categorical
-Case Inputs. Numeric partitions and numeric sweep declarations are not
-supported by this slice. The [latent review fixture](../../../fixtures/latent-review/model.xml)
-is a complete example. The [Phase 2 input contract](../2026-11-22-verify-multi-decision-builds/inputs.md)
+Version 3 builds synthetic Clinical Decisions with categorical and numeric
+Case Inputs. See the [latent review fixture](../../../fixtures/latent-review/model.xml)
+for categorical evidence and the [numeric review fixture](../../../fixtures/numeric-review/model.xml)
+for threshold partitions. The [Phase 2 input contract](../2026-11-22-verify-multi-decision-builds/inputs.md)
 and the default v1 build remain unchanged.
 
 ```sh
@@ -30,6 +30,7 @@ are allowed; text fields may contain character data or CDATA.
 | --- | --- | --- |
 | `decide-model` | `version="3"` | One or more each of `case-input`, `network`, and `route` |
 | `case-input` | `id`, `label`, `type="categorical"` | At least two `value` |
+| `case-input` | `id`, `label`, `type="numeric"`, `unit` | Empty |
 | `value` | `id`, `label` | Empty |
 | `network` | `id` | One or more `node` |
 | `node` | `id` | At least two `state`, zero or more `parent`, and one or more `row` |
@@ -38,10 +39,12 @@ are allowed; text fields may contain character data or CDATA.
 | `row` | `probabilities`; `when` required for non-roots and forbidden for roots | Empty |
 | `route` | `id`, `label` | One or more `clinical-decision` |
 | `clinical-decision` | `id`, `title`, `network`, `action-node`, `guidance` | One or more `observe`, one `applicability`, one `research-modeling-convention` |
-| `observe` | `input`, `node`; optional `required="true"` or `"false"` (default) | One `map` per value of the referenced input |
+| `observe` | `input`, `node`; optional `required="true"` or `"false"` (default) | One `map` per categorical value, or one or more `range` for a numeric input |
 | `map` | `value`, `state` | Empty |
-| `applicability` | None | One predicate (`equals`, `all`, or `any`), one `source-condition`, one `citation` |
+| `range` | `state`; optional `min`, `max`, `min-inclusive`, `max-inclusive` | Empty |
+| `applicability` | None | One predicate (`equals`, `compare`, `all`, or `any`), one `source-condition`, one `citation` |
 | `equals` | `input`, `value` | Empty |
+| `compare` | `input`, `operator` (`lt`, `lte`, `eq`, `gt`, `gte`), `threshold` | Empty |
 | `all`, `any` | None | At least two predicates |
 | `source-condition`, `citation`, `research-modeling-convention` | None | Text |
 
@@ -73,13 +76,14 @@ category labeled `Unknown`.
 
 Each `observe` maps a Case Input to a node in the decision's network. A decision
 may bind an input or a node only once, and must not observe its own action node.
-Every input value maps to exactly one valid state; more than one value may map
-to the same state. The action node's states represent mutually exclusive
+Every categorical value or numeric reading maps to exactly one valid state;
+several values or ranges may map to the same state. The action node's states represent mutually exclusive
 Competing Actions. `guidance` names the source-selected state of that node,
 even when a different state has the highest posterior.
 
 `equals` tests the original categorical value ID of an input bound by the
-decision, not its network state. `all` and `any` combine predicates; a known
+decision, not its network state. `compare` tests the original numeric reading
+in the declared unit, not its assigned band. `all` and `any` combine predicates; a known
 false operand settles `all` and a known true operand settles `any` even when
 another input is missing. An unmet or indeterminate source condition has no
 score. When guidance applies, use only the decision's declared evidence to
@@ -88,15 +92,53 @@ are marginalized. Missing required observations or zero-likelihood evidence
 leave the guidance visible but unscored. The result measures modeled support
 for excluding that action, not a clinical probability.
 
+### Numeric observations
+
+A numeric Case Input accepts signed base-10 decimals, including scientific
+notation, in its declared unit. The app trims surrounding whitespace, treats a
+blank as missing, and rejects text such as `NaN`, `Infinity`, or `0.3 points`.
+Comparisons use the exact decimal value, so `0.30` equals `3e-1`, but
+`0.30000000000000000001` is strictly greater than either.
+
+Each numeric observation partitions the entire accepted decimal domain. Omit
+`min` or `max` for an unbounded end. A supplied end is exclusive unless its
+`min-inclusive` or `max-inclusive` flag is `true`. Flags are allowed only
+with their corresponding bound and may be `true` or `false`. Adjacent ranges
+must meet at the same exact decimal, with one side including it and the other
+excluding it. A range may cover just one value if both equal ends are inclusive.
+The build rejects empty or inverted ranges, gaps, overlaps, and unknown states.
+
+```xml
+<observe input="reading" node="reading-band">
+  <range max="0.3" state="low" />
+  <range min="0.3" max="0.3" min-inclusive="true" max-inclusive="true" state="boundary" />
+  <range min="0.3" state="high" />
+</observe>
+```
+
+These are scoring ranges, not chart sampling intervals. Numeric chart
+sampling is not supported by this slice and does not limit accepted readings.
+
 ## Verification and publication
 
 Both `--cases` and `--inventory` are required. Use the [same JSON version 1
 formats as v2](../2026-11-22-verify-multi-decision-builds/inputs.md). Case
-`inputs` contains only value IDs keyed by bound Case Input ID; omit a key to
-represent missing evidence. Each decision needs applicable (with a guidance
+`inputs` contains categorical value IDs or unquoted JSON numbers keyed by
+bound Case Input ID; omit a key to represent missing evidence. Authored
+numeric tokens are compared without rounding to binary floating point.
+Each decision needs applicable (with a guidance
 state ID and a score from 0 to 1), unmet, and missing cases. Build-time
 verification calls the same evaluator as the offline app and compares scores
 within `1e-12`. Author the expected outcomes independently of that evaluator.
+For each distinct numeric applicability threshold or range endpoint, the
+decision also needs passing cases with that input below, exactly at, and above
+the threshold.
+
+```sh
+npm run build -- fixtures/numeric-review/model.xml path/to/output \
+  --cases fixtures/numeric-review/cases.json \
+  --inventory fixtures/numeric-review/inventory.json
+```
 
 The command ships the original XML byte for byte, local app assets,
 `coverage-report.md`, and `test-report.md`. The test report records build-time

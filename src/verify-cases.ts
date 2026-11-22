@@ -1,4 +1,6 @@
-import { compareDecimals, evaluateDecision, evaluateNetworkDecision, type RoutedDecision, type RoutedModel } from "./model.ts";
+import { compareDecimals, evaluateDecision, evaluateNetworkDecision, numericThresholds, type RoutedDecision, type RoutedModel } from "./model.ts";
+
+const boundaryChecks = [[-1, "below"], [0, "at"], [1, "above"]] as const;
 
 function object(value: unknown, description: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Invalid ${description}`);
@@ -9,12 +11,16 @@ function evaluateCase(
   decision: RoutedDecision, inputs: Record<string, unknown>, caseId: string, literals?: Map<string, string>,
 ) {
   if ("caseInputs" in decision) {
+    const values: Record<string, string> = Object.create(null);
     for (const [id, value] of Object.entries(inputs)) {
       const input = decision.caseInputs.find((entry) => entry.id === id);
       if (!input) throw new Error(`Invalid Case Input "${id}" in case "${caseId}"`);
-      if (!input.values.some((entry) => entry.id === value)) throw new Error(`Invalid Case Input value in case "${caseId}"`);
+      const literal = "type" in input ? (typeof value === "number" ? literals?.get(id) : undefined)
+        : input.values.find((entry) => entry.id === value)?.id;
+      if (literal === undefined) throw new Error(`Invalid Case Input value for "${id}" in case "${caseId}"`);
+      values[id] = literal;
     }
-    return { actual: evaluateNetworkDecision(decision.decision, inputs as Record<string, string>) };
+    return { actual: evaluateNetworkDecision(decision.decision, values) };
   }
   if (Object.keys(inputs).some((key) => key !== decision.caseInput.id)) throw new Error(`Invalid Case Input in case "${caseId}"`);
   const input = decision.caseInput;
@@ -50,7 +56,12 @@ export function verifyCases(model: RoutedModel, content: string) {
   if (data.version !== 1 || !Array.isArray(data.cases)) throw new Error("Invalid verification cases version or cases");
   const decisions = model.routes.flatMap((route) => route.decisions);
   const ids = new Set<string>();
-  const results = new Map(decisions.map(({ id }) => [id, { failures: [] as string[], checks: [] as string[], states: new Set<string>(), boundaries: new Set<number>() }]));
+  const results = new Map(decisions.map((decision) => {
+    const thresholds = "caseInputs" in decision ? decision.decision.inputs.flatMap((input) =>
+      "ranges" in input ? numericThresholds(decision.decision, input).map((threshold) =>
+        ({ input: input.id, threshold, boundaries: new Set<number>() })) : []) : [];
+    return [decision.id, { failures: [] as string[], checks: [] as string[], states: new Set<string>(), boundaries: new Set<number>(), thresholds }];
+  }));
   for (const raw of data.cases) {
     const entry = object(raw, "verification case");
     if (typeof entry.id !== "string" || !entry.id.trim() || ids.has(entry.id)) throw new Error("Invalid or duplicate verification case id");
@@ -59,7 +70,8 @@ export function verifyCases(model: RoutedModel, content: string) {
     if (!decision) throw new Error(`Unknown verification decision "${String(entry.decision)}"`);
     const inputs = object(entry.inputs, `inputs for case "${entry.id}"`);
     const expected = object(entry.expected, `expected result for case "${entry.id}"`);
-    const { actual, boundary } = evaluateCase(decision, inputs, entry.id, numberLiterals.get(inputs));
+    const literals = numberLiterals.get(inputs);
+    const { actual, boundary } = evaluateCase(decision, inputs, entry.id, literals);
     if (!["applicable", "unmet", "missing"].includes(String(expected.state))) throw new Error(`Invalid expected state in case "${entry.id}"`);
     if (expected.state === "applicable") {
       if (typeof expected.guidance !== "string" || typeof expected.score !== "number" || !Number.isFinite(expected.score) || expected.score < 0 || expected.score > 1) throw new Error(`Invalid expected guidance or score in case "${entry.id}"`);
@@ -75,7 +87,13 @@ export function verifyCases(model: RoutedModel, content: string) {
       (actual.action.id !== expected.guidance || !("doNotConsiderScore" in actual) ||
         Math.abs(actual.doNotConsiderScore - (expected.score as number)) > 1e-12))) {
       outcome.failures.push(`Case ${entry.id}: expected ${JSON.stringify(expected)}; actual ${JSON.stringify(actualResult)}`);
-    } else outcome.checks.push(`Case ${entry.id}: passed`);
+    } else {
+      outcome.checks.push(`Case ${entry.id}: passed`);
+      for (const { input, threshold, boundaries } of outcome.thresholds) {
+        const value = literals?.get(input);
+        if (value !== undefined) boundaries.add(compareDecimals(value, threshold));
+      }
+    }
   }
   for (const decision of decisions) {
     const result = results.get(decision.id)!;
@@ -83,8 +101,13 @@ export function verifyCases(model: RoutedModel, content: string) {
       if (!result.states.has(state)) result.failures.push(`Insufficient coverage: missing ${state} case`);
     }
     if ("caseInput" in decision && "type" in decision.caseInput) {
-      for (const [boundary, label] of [[-1, "below"], [0, "at"], [1, "above"]] as const) {
+      for (const [boundary, label] of boundaryChecks) {
         if (!result.boundaries.has(boundary)) result.failures.push(`Insufficient coverage: missing case ${label} threshold`);
+      }
+    }
+    for (const { input, threshold, boundaries } of result.thresholds) {
+      for (const [boundary, label] of boundaryChecks) {
+        if (!boundaries.has(boundary)) result.failures.push(`Insufficient coverage: missing case ${label} threshold ${threshold} for Case Input "${input}"`);
       }
     }
   }
