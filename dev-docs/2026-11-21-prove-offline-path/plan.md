@@ -12,7 +12,8 @@ Use [requirements.md](requirements.md) for scope and [validation.md](validation.
 
 - [x] Add a public npm build command that validates the model before deriving the browser representation from XML.
 - [x] Implement inference for the supported model and distinguish applicable, not applicable, and unknown inputs. Compute the Do-Not-Consider Score only for the applicable case.
-- [x] Add build-level rejection cases for invalid XML structure and invalid model probabilities.
+- [x] Use Vitest to check XML acceptance and rejection through the build command, including invalid XML structure and invalid model probabilities.
+- [x] Use Vitest to verify inference results for the applicable, unmet, and missing Case Input states.
 
 ## 3. Generate the offline CDSS
 
@@ -22,6 +23,6 @@ Use [requirements.md](requirements.md) for scope and [validation.md](validation.
 
 ## 4. Verify the slice and prepare it for review
 
-- [x] Automate the three synthetic cases against the generated app and exercise the control with networking disabled.
+- [x] Use Playwright to automate the three synthetic cases against the generated app and exercise the control with networking disabled.
 - [x] Check portability by moving the generated folder and opening its entry point from disk without a development server.
 - [x] Record the commands and verification results for review and check the phase against the merge criteria.

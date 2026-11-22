@@ -14,7 +14,9 @@
   },
   "scripts": {
     "build": "node src/build.ts",
-    "test": "playwright test tests",
+    "test": "npm run test:validation && npm run test:offline",
+    "test:offline": "playwright test tests/offline.spec.ts",
+    "test:validation": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
@@ -27,6 +29,7 @@
     "postcss": "^8.5.33",
     "saxes": "^6.0.0",
     "tailwindcss": "^4.3.5",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.5"
   }
 }

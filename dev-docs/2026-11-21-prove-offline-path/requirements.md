@@ -36,9 +36,9 @@ Use one short synthetic Markdown source and one explicitly authored XML model fo
 
 ## Testing decisions
 
-- **Confirmed seam:** Exercise the public build command and the generated `index.html` opened from disk with networking disabled. Add a separate build-level rejection check for invalid XML. No agent-host smoke test is required.
-- Assert externally visible behavior: build status, generated artifacts, browser interaction, case results, and absence of network requests. Avoid assertions about internal module structure or brittle component markup.
-- There is no existing automated test suite to extend. The roadmap exit check and the user specification’s six-week example provide the acceptance baseline.
+- Use Vitest to exercise XML acceptance and rejection through the public build command. Evaluate the three synthetic cases with the shared inference function and check the modeled score for the applicable case.
+- Use Playwright to open the generated `index.html` from disk with networking disabled, exercise the visible Case Input control, and check the results and absence of network requests. No agent-host smoke test is required.
+- Run both suites with `npm test`. The roadmap exit check and the user specification’s six-week example provide the acceptance baseline.
 
 ## Out of scope
 

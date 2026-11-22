@@ -2,10 +2,13 @@
 
 This checklist gates the Phase 1 implementation, not the first release. For context, see [requirements.md](requirements.md) and the [roadmap exit check](../roadmap.md).
 
+Run `npm run test:validation` for the Vitest build and inference checks. Run `npm run test:offline` for the Playwright browser checks, or `npm test` for both suites.
+
 ## Build checks
 
 - [x] From a clean checkout with documented prerequisites, install locked dependencies and run the documented public build command with the six-week fixture. Confirm success and a portable output folder with `index.html`, the authoritative XML, and the required local assets.
 - [x] Run the same build with malformed or structurally invalid XML, with invalid references, with an unsupported schema version, and with structurally valid XML containing an invalid probability distribution. Each run fails with a useful error and does not generate a new app from the rejected model.
+- [x] Evaluate the original model with a positive, negative, and missing Case Input. Verify that only the applicable case returns a score and that the score is 1%.
 - [x] Build a temporary valid variant that changes the complementary action probabilities (for example, from 99/1 to 95/5). The applicable case shows a 5% Do-Not-Consider Score without changes to the UI code. The acceptance fixture remains 99/1.
 
 ## Offline browser checks
@@ -49,7 +52,7 @@ npm test
 With the Task 01 prerequisites installed, run the focused browser check and the full validation commands.
 
 ```sh
-npm test -- tests/offline.spec.ts --grep 'even after relocation'
+npm run test:offline -- --grep 'even after relocation'
 npm run build
 npm run typecheck
 npm test
@@ -64,7 +67,7 @@ npm test
 With the Task 01 prerequisites installed, run the focused browser check and the full validation commands.
 
 ```sh
-npm test -- tests/offline.spec.ts --grep 'even after relocation'
+npm run test:offline -- --grep 'even after relocation'
 npm run build
 npm run typecheck
 npm test
@@ -76,10 +79,10 @@ npm test
 
 ## Task 04 verification
 
-With the Task 01 prerequisites installed, run the focused build checks followed by the original fixture build, type check, and full suite.
+Run the focused build checks with Vitest. Install Chromium using the Task 01 instructions for the full suite.
 
 ```sh
-npm test -- --grep rejects
+npm run test:validation -- -t rejects
 npm run build
 npm run typecheck
 npm test
@@ -92,3 +95,8 @@ npm test
 
 - The public build rejected models with two leading UTF-8 byte-order marks or duplicate Case Input display labels and left the requested output directory absent. This includes canonically equivalent Unicode labels. A model with one leading mark built successfully and retained the original XML.
 - `npm run build` and `npm run typecheck` passed. All 19 tests passed with `npm test`, including both offline Chromium checks. The test runner needed to run outside the command sandbox to launch subprocesses.
+
+## Test runner verification
+
+- `npm test` passed all 20 Vitest checks (17 XML build cases and three inference cases) and both offline Playwright checks. The Chromium contexts ran with networking disabled.
+- `npm run test:validation -- inference` ran only the three inference cases. `npm run build` and `npm run typecheck` also passed.

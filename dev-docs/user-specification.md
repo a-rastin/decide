@@ -63,7 +63,7 @@ In that two-action example, when the case establishes the stated conditions, the
 
 ## Verification and rebuilds
 
-Automatically test representative synthetic cases in which guidance should apply, should not apply, or cannot yet be evaluated. Verify that `index.html` runs offline directly from disk. Report failures by affected decision.
+Automatically test that the build rejects invalid XML and invalid models and that inference returns the expected results for representative synthetic cases in which guidance should apply, should not apply, or cannot yet be evaluated. Exercise the generated `index.html` in a browser opened directly from disk with networking disabled. Report failures by affected decision.
 
 Verify offline that sensitivity bars vary one Case Input at a time, that inapplicable states are not scored in comparisons, and that sandbox changes and reset leave the original case unchanged.
 

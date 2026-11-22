@@ -25,7 +25,9 @@ To build a copy with a different model or destination, pass the XML path and out
 npm run build -- fixtures/six-week-follow-up/model.xml path/to/output
 ```
 
-To run the automated offline checks, install Playwright's Chromium and any browser system dependencies for your platform.
+## Run the tests
+
+Run `npm run test:validation` to check XML build validation and case evaluation with Vitest. This suite needs no browser. For offline browser checks, install Playwright's Chromium and any browser system dependencies for your platform.
 
 ```sh
 npx playwright install chromium
@@ -33,7 +35,7 @@ npm run typecheck
 npm test
 ```
 
-The tests check the applicable case, the same app after relocation, and a temporary 95/5 XML variant. See the [Phase 1 validation record](dev-docs/2026-11-21-prove-offline-path/validation.md#task-01-verification).
+`npm test` runs both suites. Use `npm run test:offline` to run just the Playwright checks. They exercise all three case states from disk with networking disabled, repeat the checks after moving the app, and verify scoring with a temporary 95/5 XML variant. See the [Phase 1 validation record](dev-docs/2026-11-21-prove-offline-path/validation.md).
 
 ## How it is meant to work
 
