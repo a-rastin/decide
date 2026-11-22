@@ -68,3 +68,7 @@ Decide reports modeled decisions, *Unresolved Decisions*, and unreadable section
 ## Contributing
 
 When changing the design, update `dev-docs/user-specification.md` and `GLOSSARY.md` together. Introduce a glossary term when a concept is resolved, and keep implementation details out of the glossary.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).

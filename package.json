@@ -1,6 +1,7 @@
 {
   "name": "decide",
   "private": true,
+  "license": "Apache-2.0",
   "dependencies": {
     "@heroui/react": "^3.2.7",
     "@heroui/styles": "^3.2.7",
