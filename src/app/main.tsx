@@ -3,6 +3,7 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { DecideModel, RoutedModel } from "../model.ts";
 import { CaseInputFields, CaseResultDetails, evaluateCase, type CaseModel, type CaseValues } from "./case.tsx";
+import { SensitivityBars } from "./sensitivity-bars.tsx";
 import { WhatIfSandbox } from "./what-if-sandbox.tsx";
 
 declare const __DECIDE_MODEL__: DecideModel | RoutedModel;
@@ -45,6 +46,7 @@ function App({ model, values, setValue, navigation }: {
             <CaseResultDetails model={model} result={result} />
           </section>
         </section>
+        <SensitivityBars model={model} values={values} result={result} />
         <WhatIfSandbox key={"id" in model ? model.id : undefined} model={model} values={values} result={result} />
       </main>
     </>

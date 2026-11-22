@@ -1,4 +1,4 @@
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
@@ -91,6 +91,127 @@ test("routes multiple decisions and reuses only shared Case Input IDs offline", 
     await observation.getByText("Yes", { exact: true }).click();
     await shared.getByText("Unknown", { exact: true }).click();
     await expect(result.getByText("80%", { exact: true })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test("ranks categorical Sensitivity Bars by one-input score spans offline", async ({ browser }, testInfo) => {
+  const fixture = "fixtures/routed-network";
+  const output = testInfo.outputPath("categorical-sensitivity");
+  const run = buildApp(`${fixture}/model.xml`, output, ["--cases", `${fixture}/cases.json`, "--inventory", `${fixture}/inventory.json`]);
+  expect(run.status, run.stderr).toBe(0);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    await page.getByText("Second scenario", { exact: true }).click();
+    await page.getByText("Second synthetic decision", { exact: true }).click();
+    const inputs = page.getByRole("region", { name: "Synthetic Case Input" });
+    await inputs.getByRole("radiogroup", { name: "Synthetic observation" }).getByText("Yes", { exact: true }).click();
+    await inputs.getByRole("radiogroup", { name: "Shared synthetic marker" }).getByText("Yes", { exact: true }).click();
+
+    const sensitivity = page.getByRole("region", { name: "Sensitivity Bars" });
+    await expect(sensitivity.getByText(/model sensitivity, not causation/i)).toBeVisible();
+    await expect(sensitivity.getByText(/Review the synthetic sample/)).toBeVisible();
+    const ranges = sensitivity.getByRole("list", { name: "Comparable score ranges" });
+    // From the reviewed action's CPT: Yes/Yes → 90%, No/Yes → 40%,
+    // Yes/No → 70%. The 20% for the joint No/No change is not a sample.
+    await expect(ranges.getByRole("listitem")).toHaveText([
+      /Synthetic observation.*40%–90%/, /Shared synthetic marker.*70%–90%/,
+    ]);
+    const observations = sensitivity.getByRole("table", { name: "Synthetic observation" });
+    await expect(observations.getByRole("row").filter({ has: page.getByRole("rowheader") })).toHaveText([
+      /^Yes\s*90%$/, /^No\s*40%$/, /^Impossible.*zero probability/,
+    ]);
+    const markers = sensitivity.getByRole("table", { name: "Shared synthetic marker" });
+    await expect(markers.getByRole("row").filter({ has: page.getByRole("rowheader") })).toHaveText([
+      /^Yes\s*90%$/, /^No\s*70%$/,
+    ]);
+    await inputs.getByRole("radiogroup", { name: "Synthetic observation" }).getByText("Impossible", { exact: true }).click();
+    await expect(ranges).toHaveCount(0);
+    await expect(sensitivity.getByRole("status")).toContainText(/original case.*zero probability/i);
+  } finally {
+    await context.close();
+  }
+});
+
+test("explains unavailable categorical comparisons without retaining ranges or gating the sandbox", async ({ browser }, testInfo) => {
+  const fixture = "fixtures/routed-network";
+  const output = testInfo.outputPath("categorical-unavailable");
+  const run = buildApp(`${fixture}/model.xml`, output, ["--cases", `${fixture}/cases.json`, "--inventory", `${fixture}/inventory.json`]);
+  expect(run.status, run.stderr).toBe(0);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    await page.getByText("First scenario", { exact: true }).click();
+    await page.getByText("First synthetic decision", { exact: true }).click();
+    const inputs = page.getByRole("region", { name: "Synthetic Case Input" });
+    const observation = inputs.getByRole("radiogroup", { name: "Synthetic observation" });
+    const marker = inputs.getByRole("radiogroup", { name: "Shared synthetic marker" });
+    const sensitivity = page.getByRole("region", { name: "Sensitivity Bars" });
+    const ranges = sensitivity.getByRole("list", { name: "Comparable score ranges" });
+    await expect(sensitivity.getByRole("status")).toContainText(/original case.*missing.*guidance applies/i);
+    await observation.getByText("Yes", { exact: true }).click();
+    await expect(sensitivity.getByRole("status")).toContainText(/original case.*more Case Inputs.*score/i);
+    await expect(ranges).toHaveCount(0);
+    // Both marker samples can be scored, but the original still cannot.
+    await expect(sensitivity.getByRole("table", { name: "Shared synthetic marker" }).getByRole("cell", { name: "70%" })).toBeVisible();
+
+    await marker.getByText("Yes", { exact: true }).click();
+    await expect(ranges.getByRole("listitem")).toHaveText([/Shared synthetic marker.*70%–90%/]);
+    const observations = sensitivity.getByRole("table", { name: "Synthetic observation" });
+    await expect(observations.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "No", exact: true }) }))
+      .toContainText("Source condition: The first observation is Yes.");
+    await expect(observations.getByText(/fewer than two comparable scores/i)).toBeVisible();
+    await page.getByRole("button", { name: "Open What-If Sandbox" }).click();
+    const variant = page.getByRole("region", { name: "What-if variant" });
+    await variant.getByRole("radiogroup", { name: "Synthetic observation" }).getByText("No", { exact: true }).click();
+    await expect(ranges.getByRole("listitem")).toHaveText([/Shared synthetic marker.*70%–90%/]);
+
+    await observation.getByText("No", { exact: true }).click();
+    await expect(ranges).toHaveCount(0);
+    await expect(sensitivity.getByRole("status")).toContainText(/original case.*guidance does not apply.*The first observation is Yes/i);
+    await variant.getByRole("radiogroup", { name: "Synthetic observation" }).getByText("Yes", { exact: true }).click();
+    await expect(variant.getByText("90%", { exact: true })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test("shows the common score for equal categorical samples in stable input order", async ({ browser }, testInfo) => {
+  const fixture = "fixtures/routed-network";
+  const model = testInfo.outputPath("equal-scores.xml");
+  const cases = testInfo.outputPath("cases.json");
+  const output = testInfo.outputPath("equal-scores");
+  await mkdir(testInfo.outputDir, { recursive: true });
+  await writeFile(model, (await readFile(`${fixture}/model.xml`, "utf8"))
+    .replaceAll('value id="impossible" label="Impossible"', 'value id="impossible" label="Unknown"')
+    .replace('probabilities="0.5 0.5 0"', 'probabilities="0.75 0.25 0"')
+    .replace('probabilities="0.5 0.5"', 'probabilities="0.4 0.6"')
+    .replace('when="yes yes" probabilities="0.1 0.9"', 'when="yes yes" probabilities="0.3 0.7"')
+    .replace('when="no yes" probabilities="0.6 0.4"', 'when="no yes" probabilities="0.3 0.7"'));
+  await writeFile(cases, (await readFile(`${fixture}/cases.json`, "utf8")).replace(/"score": 0\.[89]/g, '"score": 0.7'));
+  const run = buildApp(model, output, ["--cases", cases, "--inventory", `${fixture}/inventory.json`]);
+  expect(run.status, run.stderr).toBe(0);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    await page.getByText("Second scenario", { exact: true }).click();
+    await page.getByText("Second synthetic decision", { exact: true }).click();
+    const inputs = page.getByRole("region", { name: "Synthetic Case Input" });
+    await inputs.getByRole("radiogroup", { name: "Synthetic observation" }).getByText("Yes", { exact: true }).click();
+    await inputs.getByRole("radiogroup", { name: "Shared synthetic marker" }).getByText("Yes", { exact: true }).click();
+
+    const ranges = page.getByRole("list", { name: "Comparable score ranges" });
+    await expect(ranges.getByRole("listitem")).toHaveText([
+      /Shared synthetic marker.*No modeled change.*70%/, /Synthetic observation.*No modeled change.*70%/,
+    ]);
+    const observations = page.getByRole("table", { name: "Synthetic observation" });
+    await expect(observations.getByRole("rowheader", { name: "Unknown (modeled value)" })).toBeVisible();
+    await expect(observations.getByRole("rowheader", { name: "Unknown", exact: true })).toHaveCount(0);
   } finally {
     await context.close();
   }

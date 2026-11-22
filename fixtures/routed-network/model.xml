@@ -41,10 +41,10 @@
   </route>
   <route id="second-route" label="Second scenario">
     <clinical-decision id="second-review" title="Second synthetic decision" network="joint" action-node="action" guidance="review">
+      <observe input="shared" node="marker"><map value="yes" state="yes" /><map value="no" state="no" /></observe>
       <observe input="other" node="observation">
         <map value="yes" state="yes" /><map value="no" state="no" /><map value="impossible" state="impossible" />
       </observe>
-      <observe input="shared" node="marker"><map value="yes" state="yes" /><map value="no" state="no" /></observe>
       <applicability>
         <any><equals input="other" value="yes" /><equals input="shared" value="yes" /></any>
         <source-condition>The second observation or shared marker is Yes.</source-condition><citation>Synthetic Joint Note §2</citation>

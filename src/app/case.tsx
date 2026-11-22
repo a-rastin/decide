@@ -5,7 +5,7 @@ import { caseValueDisplayLabel, evaluateDecision, evaluateNetworkDecision, unkno
 export type CaseModel = DecideModel | RoutedDecision;
 export type CaseValues = Record<string, string>;
 
-const scoreFormat = new Intl.NumberFormat("en", {
+export const scoreFormat = new Intl.NumberFormat("en", {
   style: "percent",
   maximumFractionDigits: 6,
 });
