@@ -157,3 +157,32 @@ test("routes verified categorical decisions and reuses only shared Case Input ID
     await context.close();
   }
 });
+
+test("evaluates numeric inputs and rejects invalid text offline", async ({ browser }, testInfo) => {
+  const output = testInfo.outputPath("numeric-app");
+  const run = buildApp("fixtures/mixed-decisions/model.xml", output, ["--cases", "fixtures/mixed-decisions/cases.json"]);
+  expect(run.status, run.stderr).toBe(0);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    await page.getByText("Monitoring", { exact: true }).first().click();
+    await page.getByText("Marker check", { exact: true }).first().click();
+    const input = page.getByLabel("Synthetic marker (units)");
+    await expect(page.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
+    await input.fill("9.9999999999999999");
+    await expect(page.getByRole("heading", { name: "Guidance does not apply" })).toBeVisible();
+    await input.fill("10");
+    await expect(page.getByRole("heading", { name: "Repeat the marker check" })).toBeVisible();
+    await expect(page.getByText("5%", { exact: true })).toBeVisible();
+    await input.fill("10.01");
+    await expect(page.getByRole("heading", { name: "Repeat the marker check" })).toBeVisible();
+    await input.fill("oops");
+    await expect(page.getByText("Invalid numeric Case Input")).toBeVisible();
+    await expect(page.getByText("Do-Not-Consider Score")).toHaveCount(0);
+    await input.fill("");
+    await expect(page.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});

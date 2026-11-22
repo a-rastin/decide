@@ -1,14 +1,15 @@
 # Phase 2 input contract
 
-This is the contract for Phase 2. The current build supports the categorical
-subset of version 2 with `--cases`; numeric inputs, inventory reconciliation,
+This is the contract for Phase 2. The current build supports categorical and
+numeric version 2 inputs with `--cases`; inventory reconciliation,
 reports and the full command below are not implemented yet. Version 1 and its
 two positional arguments remain supported unchanged.
 
-For a categorical-only version 2 model, run
+For a version 2 model, run
 `npm run build -- path/to/model.xml path/to/output --cases path/to/cases.json`.
 Every delivered decision must pass independently authored applicable, unmet,
-and missing cases. Failed or insufficiently tested decisions are excluded;
+and missing cases; numeric decisions also require cases below, at, and above
+the threshold. Failed or insufficiently tested decisions are excluded;
 if none pass, no app is published. Such a build may be partial and is not a
 substitute for the planned coverage and test reports.
 
@@ -99,5 +100,6 @@ all inputs before generation, verify cases with the shared evaluator, and
 publish the original XML and separate coverage and test reports alongside
 verified guidance. Reruns will select a distinct destination by default;
 `--replace` will explicitly request replacement. The command will print the
-actual published entry point. None of these Phase 2 behaviors is implemented
-by this fixture-only issue.
+actual published entry point. Inventory reconciliation, reports, and safe
+rerun publication remain planned; the current `--cases` invocation validates
+and verifies categorical and numeric decisions.

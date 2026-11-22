@@ -21,13 +21,13 @@ function App({ model, selectedOption, setSelectedOption, navigation }: {
 }) {
   const { caseInput, decision } = model;
   const caseOptions = [
-    ...caseInput.values.map(({ id, label }) => ({
+    ...("values" in caseInput ? caseInput.values : []).map(({ id, label }) => ({
       value: `${knownCasePrefix}${id}`,
       label: caseValueDisplayLabel(label),
     })),
     { value: unknownCaseOption, label: unknownCaseLabel },
   ];
-  const caseValue = selectedOption === unknownCaseOption ? null : selectedOption.slice(knownCasePrefix.length);
+  const caseValue = "type" in caseInput ? selectedOption : selectedOption === unknownCaseOption ? null : selectedOption.slice(knownCasePrefix.length);
   const result = evaluateDecision(decision, caseValue);
   const applicable = result.status === "applicable";
 
@@ -51,7 +51,13 @@ function App({ model, selectedOption, setSelectedOption, navigation }: {
         <section className="grid items-start gap-8 md:grid-cols-[2fr_3fr]">
           <section aria-labelledby="case-input-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
             <h2 id="case-input-heading" className="mb-5 text-lg font-semibold">Synthetic Case Input</h2>
-            <RadioGroup name={caseInput.id} value={selectedOption} onChange={setSelectedOption} className="gap-3">
+            {"type" in caseInput ? (
+              <label className="block font-medium">
+                {caseInput.label} ({caseInput.unit})
+                <input type="text" inputMode="decimal" value={selectedOption} onChange={(event) => setSelectedOption(event.target.value)}
+                  aria-invalid={result.status === "invalid"} className="mt-3 block w-full rounded-lg border border-slate-300 p-3" />
+              </label>
+            ) : <RadioGroup name={caseInput.id} value={selectedOption} onChange={setSelectedOption} className="gap-3">
               <Label>{caseInput.label}</Label>
               {caseOptions.map(({ value, label }) => (
                 <Radio key={value} value={value}>
@@ -63,7 +69,7 @@ function App({ model, selectedOption, setSelectedOption, navigation }: {
                   </Radio.Content>
                 </Radio>
               ))}
-            </RadioGroup>
+            </RadioGroup>}
           </section>
 
           <section aria-labelledby="result-heading" aria-live="polite" className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
@@ -73,6 +79,8 @@ function App({ model, selectedOption, setSelectedOption, navigation }: {
                 <h3 className="font-serif text-3xl tracking-tight text-slate-950">Missing Case Input</h3>
                 <p className="text-slate-700">{caseInput.label}</p>
               </article>
+            ) : result.status === "invalid" ? (
+              <p role="alert">Invalid numeric Case Input</p>
             ) : (
               <article className="space-y-5">
                 <h3 className="font-serif text-3xl tracking-tight text-slate-950">
@@ -142,7 +150,7 @@ function Root({ model }: { model: DecideModel | MultiModel }) {
       <main className="mx-auto max-w-6xl px-6 py-10">{navigation}</main>
     </>
   );
-  return <App model={current} navigation={navigation} selectedOption={values[current.caseInput.id] ?? unknownCaseOption}
+  return <App model={current} navigation={navigation} selectedOption={values[current.caseInput.id] ?? ("type" in current.caseInput ? "" : unknownCaseOption)}
     setSelectedOption={(value) => setValues((previous) => ({ ...previous, [current.caseInput.id]: value }))} />;
 }
 

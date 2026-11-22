@@ -82,6 +82,21 @@ test("builds a categorical v2 model only when synthetic cases verify its decisio
   expect(await readFile(join(output, "model.xml"), "utf8")).toBe(xml);
 });
 
+test("builds numeric decisions and rejects invalid numeric definitions before publication", async (context) => {
+  const directory = await createBuildDirectory(context);
+  const model = join(directory, "model.xml");
+  const xml = await readFile("fixtures/mixed-decisions/model.xml", "utf8");
+  await writeFile(model, xml);
+  const run = buildApp(model, join(directory, "valid"), ["--cases", "fixtures/mixed-decisions/cases.json"]);
+  expect(run.status, run.stderr).toBe(0);
+  for (const replacement of ['operator="bad" threshold="10"', 'operator="gte" threshold="NaN"', 'value="yes"']) {
+    await writeFile(model, xml.replace('operator="gte" threshold="10"', replacement));
+    const invalid = buildApp(model, join(directory, "invalid"), ["--cases", "fixtures/mixed-decisions/cases.json"]);
+    expect(invalid.status).not.toBe(0);
+    await expect(stat(join(directory, "invalid"))).rejects.toHaveProperty("code", "ENOENT");
+  }
+}, 30000);
+
 test("refuses to publish v2 without verification cases", async (context) => {
   const directory = await createBuildDirectory(context);
   const model = join(directory, "model.xml");
