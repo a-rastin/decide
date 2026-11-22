@@ -78,3 +78,43 @@ test("does not publish the v3 decision when its independently authored score doe
   expect(run.stderr).toMatch(/No verified decisions: review-sample: Case clear: expected .*; actual /);
   await expect(stat(output)).rejects.toHaveProperty("code", "ENOENT");
 });
+
+test("verifies routed decisions sharing a multi-parent network and preserves the original on rerun", async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), "decide-routed-network-"));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const fixture = "fixtures/routed-network";
+  const output = join(directory, "app");
+  const args = ["--cases", `${fixture}/cases.json`, "--inventory", `${fixture}/inventory.json`];
+  const first = buildApp(`${fixture}/model.xml`, output, args);
+  expect(first.status, first.stderr).toBe(0);
+  const original = await readArtifact(output);
+  const coverage = await readFile(join(output, "coverage-report.md"), "utf8");
+  const report = await readFile(join(output, "test-report.md"), "utf8");
+  expect(coverage).toMatch(/first-review.*verified and delivered/);
+  expect(coverage).toMatch(/second-review.*verified and delivered/);
+  expect(report).toMatch(/first-review: verified/);
+  expect(report).toMatch(/second-review: verified/);
+  expect(report).toMatch(/Browser checks not run by this build/);
+  const rerun = buildApp(`${fixture}/model.xml`, output, args);
+  expect(rerun.status, rerun.stderr).toBe(0);
+  expect(await readArtifact(output)).toEqual(original);
+  expect((await readdir(directory)).length).toBe(2);
+}, 30_000);
+
+test("excludes only the routed decision with a mismatched verification case", async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), "decide-partial-network-"));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const fixture = "fixtures/routed-network";
+  const cases = join(directory, "cases.json");
+  const output = join(directory, "app");
+  await writeFile(cases, (await readFile(`${fixture}/cases.json`, "utf8")).replace('"score": 0.9', '"score": 0.1'));
+  const run = buildApp(`${fixture}/model.xml`, output, ["--cases", cases, "--inventory", `${fixture}/inventory.json`]);
+  expect(run.status, run.stderr).toBe(0);
+  const coverage = await readFile(join(output, "coverage-report.md"), "utf8");
+  const report = await readFile(join(output, "test-report.md"), "utf8");
+  expect(coverage).toMatch(/Build status: partial/);
+  expect(coverage).toMatch(/first-review.*excluded/);
+  expect(coverage).toMatch(/second-review.*verified and delivered/);
+  expect(report).toMatch(/first-review: excluded[\s\S]*Case first-both-yes: expected/);
+  expect(report).toMatch(/second-review: verified/);
+}, 30_000);

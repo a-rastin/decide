@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "cases": [
+    { "id": "first-both-yes", "decision": "first-review", "inputs": { "first": "yes", "shared": "yes" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.9 } },
+    { "id": "first-no", "decision": "first-review", "inputs": { "first": "no" }, "expected": { "state": "unmet" } },
+    { "id": "first-missing", "decision": "first-review", "inputs": {}, "expected": { "state": "missing" } },
+    { "id": "second-both-yes", "decision": "second-review", "inputs": { "other": "yes", "shared": "yes" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.9 } },
+    { "id": "second-optional-missing", "decision": "second-review", "inputs": { "other": "yes" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.8 } },
+    { "id": "second-no", "decision": "second-review", "inputs": { "other": "no", "shared": "no" }, "expected": { "state": "unmet" } },
+    { "id": "second-missing", "decision": "second-review", "inputs": {}, "expected": { "state": "missing" } }
+  ]
+}

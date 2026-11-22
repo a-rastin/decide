@@ -30,7 +30,8 @@ type NetworkOutcome =
 
 /** Evaluate source applicability before using the decision's declared scoring evidence. */
 export function evaluateNetworkDecision(decision: NetworkDecision, values: Record<string, string | undefined>): NetworkOutcome {
-  const valueFor = (id: string) => Object.hasOwn(values, id) ? values[id] : undefined;
+  const overrides: Record<string, string> = Object.create(null);
+  const valueFor = (id: string) => Object.hasOwn(overrides, id) ? overrides[id] : Object.hasOwn(values, id) ? values[id] : undefined;
   type ConditionResult = { state: "true" | "false" | "missing" | "invalid"; inputs: string[] };
   function conditionResult(condition: NetworkCondition): ConditionResult {
     if (condition.kind === "equals") {
@@ -51,7 +52,41 @@ export function evaluateNetworkDecision(decision: NetworkDecision, values: Recor
   }
   const applicability = conditionResult(decision.condition);
   if (applicability.state === "false") return { status: "unmet" };
-  if (applicability.state === "missing" || applicability.state === "invalid") return { status: applicability.state, inputs: applicability.inputs };
+  if (applicability.state === "invalid") return { status: "invalid", inputs: applicability.inputs };
+  if (applicability.state === "missing") {
+    // A repeated input can correlate predicates in different branches. Check
+    // whether varying each unanswered input can actually change the outcome
+    // while the other unanswered inputs have the same values.
+    const relevant = applicability.inputs.filter((candidate) => {
+      const others = applicability.inputs.filter((id) => id !== candidate);
+      const candidates = decision.inputs.find(({ id }) => id === candidate)!.values;
+      function affects(index: number): boolean {
+        const states = candidates.map((value) => {
+          overrides[candidate] = value;
+          return conditionResult(decision.condition).state;
+        });
+        delete overrides[candidate];
+        if (states.every((state) => state === "true") || states.every((state) => state === "false")) return false;
+        if (index === others.length) return states.includes("true") && states.includes("false");
+        const id = others[index];
+        for (const value of decision.inputs.find((input) => input.id === id)!.values) {
+          overrides[id] = value;
+          if (affects(index + 1)) {
+            delete overrides[id];
+            return true;
+          }
+        }
+        delete overrides[id];
+        return false;
+      }
+      return affects(0);
+    });
+    if (relevant.length) return { status: "missing", inputs: relevant };
+    for (const id of applicability.inputs) overrides[id] = decision.inputs.find((input) => input.id === id)!.values[0];
+    const settled = conditionResult(decision.condition).state;
+    for (const id of applicability.inputs) delete overrides[id];
+    if (settled === "false") return { status: "unmet" };
+  }
   const invalid = decision.inputs.filter(({ id, values: allowed }) => {
     const value = valueFor(id);
     return value && !allowed.includes(value);

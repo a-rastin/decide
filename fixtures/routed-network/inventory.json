@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "source": "source.md",
+  "decisions": [
+    { "id": "first-review", "section": "§1", "status": "modeled" },
+    { "id": "second-review", "section": "§2", "status": "modeled" }
+  ],
+  "sections": []
+}

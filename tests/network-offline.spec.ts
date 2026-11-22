@@ -1,4 +1,4 @@
-import { readFile, rename } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
@@ -50,6 +50,66 @@ test("scores the source-selected v3 action through a latent node in a relocated 
     await expect(score).toHaveCount(0);
     expect(requests).toEqual([]);
     expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test("routes multiple decisions and reuses only shared Case Input IDs offline", async ({ browser }, testInfo) => {
+  const fixture = "fixtures/routed-network";
+  const output = testInfo.outputPath("routed-app");
+  const run = buildApp(`${fixture}/model.xml`, output, ["--cases", `${fixture}/cases.json`, "--inventory", `${fixture}/inventory.json`]);
+  expect(run.status, run.stderr).toBe(0);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    await page.getByText("First scenario", { exact: true }).click();
+    await page.getByText("First synthetic decision", { exact: true }).click();
+    const result = page.getByRole("region", { name: "Decision result" });
+    const observation = page.getByRole("radiogroup", { name: "Synthetic observation" });
+    const shared = page.getByRole("radiogroup", { name: "Shared synthetic marker" });
+    await expect(result.getByText("Synthetic observation")).toBeVisible();
+    await expect(result.getByText("Shared synthetic marker")).toHaveCount(0);
+    await observation.getByText("No", { exact: true }).click();
+    await expect(result.getByText("Guidance does not apply")).toBeVisible();
+    await expect(result.getByText("The first observation is Yes.")).toBeVisible();
+    await expect(result.getByText("Synthetic Joint Note §1")).toBeVisible();
+    await observation.getByText("Yes", { exact: true }).click();
+    await expect(result.getByText("No score. Supply: Shared synthetic marker.")).toBeVisible();
+    await shared.getByText("Yes", { exact: true }).click();
+    await expect(result.getByText("90%", { exact: true })).toBeVisible();
+    await page.getByText("Second scenario", { exact: true }).click();
+    await page.getByText("Second synthetic decision", { exact: true }).click();
+    await expect(observation.getByRole("radio", { name: "Unknown" })).toBeChecked();
+    await expect(shared.getByRole("radio", { name: "Yes" })).toBeChecked();
+    await expect(result.getByText("65%", { exact: true })).toBeVisible();
+    await observation.getByText("Impossible", { exact: true }).click();
+    await expect(result.getByText("No score. The entered evidence has zero probability in this model.")).toBeVisible();
+    await expect(result.getByText("Review the synthetic sample")).toBeVisible();
+    await expect(result.getByRole("heading", { name: "Do-Not-Consider Score" })).toHaveCount(0);
+    await observation.getByText("Yes", { exact: true }).click();
+    await shared.getByText("Unknown", { exact: true }).click();
+    await expect(result.getByText("80%", { exact: true })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test("visibly labels a partially verified routed network and excludes failed guidance", async ({ browser }, testInfo) => {
+  const fixture = "fixtures/routed-network";
+  const cases = testInfo.outputPath("failed-cases.json");
+  const output = testInfo.outputPath("partial-app");
+  await writeFile(cases, (await readFile(`${fixture}/cases.json`, "utf8")).replace('"score": 0.9', '"score": 0.1'));
+  const run = buildApp(`${fixture}/model.xml`, output, ["--cases", cases, "--inventory", `${fixture}/inventory.json`]);
+  expect(run.status, run.stderr).toBe(0);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    await expect(page.getByText(/Partial build/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Second synthetic decision" })).toBeVisible();
+    await expect(page.getByText("First synthetic decision", { exact: true })).toHaveCount(0);
   } finally {
     await context.close();
   }
