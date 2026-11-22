@@ -6,9 +6,34 @@
 
 ## Status
 
-This repository is at the **specification stage**: it contains the design, the project vocabulary, and npm dependencies for the planned UI, but no implementation yet. The normative description of what Decide must do is [`user-specification.md`](user-specification.md); the agreed terminology lives in [`GLOSSARY.md`](GLOSSARY.md). Plugin installation instructions, the agent prompt, and the one-line installer will appear here once they exist.
+The first implementation builds a portable app for the synthetic six-week follow-up example. The full release requirements and project vocabulary are documented in the [user specification](dev-docs/user-specification.md) and [glossary](GLOSSARY.md).
 
-For development, run `npm ci` to install the locked dependencies, including [HeroUI](https://www.heroui.com/) (`@heroui/react` and `@heroui/styles`). There is no app to start yet. See the [tech stack](dev-docs/tech-stack.md) for the planned integration.
+## Build the six-week follow-up example
+
+From the repository root, use Node.js 24 or later with npm.
+
+```sh
+npm ci
+npm run build
+```
+
+Open `dist/index.html` directly in a browser. The folder contains the authoritative `model.xml` and the local `app.js` and `app.css` assets. You can move the whole folder and reopen `index.html` from its new location. Choose **Yes** for the synthetic Case Input to see the six-week guidance. The [synthetic source and cases](fixtures/six-week-follow-up/source.md) document the example.
+
+To build a copy with a different model or destination, pass the XML path and output folder in that order. See the [Decide XML schema](dev-docs/2026-11-21-prove-offline-path/xml-model.md) for the supported structure and validation rules.
+
+```sh
+npm run build -- fixtures/six-week-follow-up/model.xml path/to/output
+```
+
+To run the automated offline checks, install Playwright's Chromium and any browser system dependencies for your platform.
+
+```sh
+npx playwright install chromium
+npm run typecheck
+npm test
+```
+
+The tests check the applicable case, the same app after relocation, and a temporary 95/5 XML variant. See the [Phase 1 validation record](dev-docs/2026-11-21-prove-offline-path/validation.md#task-01-verification).
 
 ## How it is meant to work
 
@@ -24,7 +49,7 @@ The generated app will use a shared React UI built with HeroUI, with all assets 
 
 ### A note on probabilities
 
-The spec keeps three quantities separate: **clinical probabilities** (estimated chance of a condition or outcome), **action probabilities** (modeled support for a guidance option, sometimes from a declared *Research Modeling Convention*), and the **Do-Not-Consider Score** (an app-facing value where higher means stronger support for *not* considering an option). Conflating them is a common source of confusion — see the worked six-week follow-up example in [`user-specification.md`](user-specification.md).
+The spec keeps three quantities separate: **clinical probabilities** (estimated chance of a condition or outcome), **action probabilities** (modeled support for a guidance option, sometimes from a declared *Research Modeling Convention*), and the **Do-Not-Consider Score** (an app-facing value where higher means stronger support for *not* considering an option). Conflating them is a common source of confusion — see the worked six-week follow-up example in [`user-specification.md`](dev-docs/user-specification.md).
 
 ### Coverage is explicit
 
@@ -34,7 +59,7 @@ Decide reports modeled decisions, *Unresolved Decisions*, and unreadable section
 
 | File | Purpose |
 | --- | --- |
-| [`user-specification.md`](user-specification.md) | Normative specification of the plugin, workflow, and generated CDSS. |
+| [`dev-docs/user-specification.md`](dev-docs/user-specification.md) | Normative specification of the plugin, workflow, and generated CDSS. |
 | [`GLOSSARY.md`](GLOSSARY.md) | Canonical project terms and the words to avoid. |
 | [`dev-docs/mission.md`](dev-docs/mission.md) | Project mission and guiding principles. |
 | [`dev-docs/tech-stack.md`](dev-docs/tech-stack.md) | Implementation stack and runtime constraints. |
@@ -42,7 +67,7 @@ Decide reports modeled decisions, *Unresolved Decisions*, and unreadable section
 
 ## Contributing
 
-When changing the design, update `user-specification.md` and `GLOSSARY.md` together. Introduce a glossary term when a concept is resolved, and keep implementation details out of the glossary.
+When changing the design, update `dev-docs/user-specification.md` and `GLOSSARY.md` together. Introduce a glossary term when a concept is resolved, and keep implementation details out of the glossary.
 
 ## License
 

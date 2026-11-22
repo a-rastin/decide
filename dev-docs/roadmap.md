@@ -1,6 +1,6 @@
 # Roadmap
 
-Build in small, verifiable phases. Early milestones are internal slices, not reduced release scope. The [user specification](../user-specification.md) is the first-release acceptance baseline.
+Build in small, verifiable phases. Early milestones are internal slices, not reduced release scope. The [user specification](user-specification.md) is the first-release acceptance baseline.
 
 | Phase | Work | Exit check |
 | --- | --- | --- |
