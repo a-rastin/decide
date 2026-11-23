@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { beforeAll, expect, test } from "vitest";
-import { evaluateDecision, type DecideModel } from "../src/model.ts";
+import { evaluateDecision, evaluateNetworkDecision, inferPosterior, type DecideModel, type NetworkDecision } from "../src/model.ts";
 import { readModel } from "../src/read-model.ts";
 
 let decision: DecideModel["decision"];
@@ -18,6 +18,151 @@ test("scores the six-week guidance when baseline checks are complete", () => {
     action: { id: "recheck", label: "Recheck at six weeks" },
     doNotConsiderScore: expect.closeTo(0.01, 10),
   });
+});
+
+test("marginalizes latent states to score the source-selected action given observed evidence", () => {
+  const network = [
+    { id: "latent", states: ["low", "high"], parents: [], rows: [{ when: [], probabilities: [0.6, 0.4] }] },
+    { id: "observation", states: ["negative", "positive"], parents: ["latent"], rows: [
+      { when: ["low"], probabilities: [0.8, 0.2] },
+      { when: ["high"], probabilities: [0.2, 0.8] },
+    ] },
+    { id: "action", states: ["selected", "other"], parents: ["latent"], rows: [
+      { when: ["low"], probabilities: [0.1, 0.9] },
+      { when: ["high"], probabilities: [0.7, 0.3] },
+    ] },
+  ];
+  // P(high | positive) = 8/11, hence P(selected | positive) = 59/110.
+  expect(inferPosterior(network, "action", "selected", { observation: "positive" })).toBeCloseTo(59 / 110, 12);
+  expect(inferPosterior(network, "action", "selected", { observation: "negative" })).toBeCloseTo(13 / 70, 12);
+});
+
+test("does not invent a posterior when observed evidence has zero probability", () => {
+  const network = [
+    { id: "observation", states: ["possible", "impossible"], parents: [], rows: [{ when: [], probabilities: [1, 0] }] },
+    { id: "action", states: ["selected", "other"], parents: [], rows: [{ when: [], probabilities: [0.4, 0.6] }] },
+  ];
+  expect(inferPosterior(network, "action", "selected", { observation: "impossible" })).toBeNull();
+});
+
+test("preserves a positive score when the selected posterior rounds to one", () => {
+  const decision: NetworkDecision = {
+    action: { node: "action", id: "selected", label: "Selected action" },
+    inputs: [{ id: "gate", node: "gate", required: false, values: ["yes", "no"], states: ["yes", "no"] }],
+    condition: { kind: "equals", input: "gate", value: "yes" },
+    nodes: [
+      { id: "gate", states: ["yes", "no"], parents: [], rows: [{ when: [], probabilities: [0.5, 0.5] }] },
+      { id: "action", states: ["selected", "other"], parents: [], rows: [{ when: [], probabilities: [1, 1e-100] }] },
+    ],
+  };
+  const result = evaluateNetworkDecision(decision, { gate: "yes" });
+  expect("doNotConsiderScore" in result && result.doNotConsiderScore / 1e-100).toBeCloseTo(1, 12);
+});
+
+test("scores possible evidence even when its joint likelihood is below binary64 range", () => {
+  const network = [
+    { id: "action", states: ["selected", "other"], parents: [], rows: [{ when: [], probabilities: [0.5, 0.5] }] },
+    ...["first", "second"].map((id) => ({
+      id, states: ["hit", "miss"], parents: ["action"], rows: [
+        { when: ["selected"], probabilities: [1e-200, 1] },
+        { when: ["other"], probabilities: [id === "first" ? 2e-200 : 1e-200, 1] },
+      ],
+    })),
+  ];
+  expect(inferPosterior(network, "action", "selected", { first: "hit", second: "hit" })).toBeCloseTo(1 / 3, 12);
+});
+
+test("independent evidence with unequal likelihoods leaves the score exactly unchanged", () => {
+  const decision: NetworkDecision = {
+    action: { node: "action", id: "selected", label: "Selected action" },
+    inputs: [
+      { id: "gate", node: "gate", required: false, values: ["yes", "no"], states: ["yes", "no"] },
+      { id: "observation", node: "observation", required: false, values: ["rare", "common"], states: ["rare", "common"] },
+    ],
+    condition: { kind: "equals", input: "gate", value: "yes" },
+    nodes: [
+      { id: "gate", states: ["yes", "no"], parents: [], rows: [{ when: [], probabilities: [0.5, 0.5] }] },
+      { id: "action", states: ["selected", "other"], parents: [], rows: [{ when: [], probabilities: [0.3, 0.7] }] },
+      { id: "observation", states: ["rare", "common"], parents: ["action"], rows: [
+        { when: ["selected"], probabilities: [0.01, 0.99] },
+        { when: ["other"], probabilities: [0.01, 0.99] },
+      ] },
+    ],
+  };
+  for (const observation of [undefined, "rare", "common"]) {
+    expect(evaluateNetworkDecision(decision, { gate: "yes", observation }))
+      .toMatchObject({ status: "applicable", doNotConsiderScore: 0.7 });
+  }
+});
+
+test("evaluates decisive multi-input conditions independently from scoring evidence", () => {
+  const decision: NetworkDecision = {
+    action: { node: "action", id: "selected", label: "Selected action" },
+    inputs: [
+      { id: "first", values: ["yes", "no"], states: ["yes", "no"], node: "first", required: false },
+      { id: "second", values: ["yes", "no"], states: ["yes", "no"], node: "second", required: true },
+    ],
+    condition: { kind: "all", operands: [
+      { kind: "equals", input: "first", value: "yes" },
+      { kind: "equals", input: "second", value: "yes" },
+    ] },
+    nodes: [
+      { id: "first", states: ["yes", "no"], parents: [], rows: [{ when: [], probabilities: [0.5, 0.5] }] },
+      { id: "second", states: ["yes", "no"], parents: [], rows: [{ when: [], probabilities: [0.5, 0.5] }] },
+      { id: "action", states: ["selected", "other"], parents: ["first", "second"], rows: [
+        { when: ["yes", "yes"], probabilities: [0.8, 0.2] },
+        { when: ["yes", "no"], probabilities: [0.6, 0.4] },
+        { when: ["no", "yes"], probabilities: [0.4, 0.6] },
+        { when: ["no", "no"], probabilities: [0.2, 0.8] },
+      ] },
+    ],
+  };
+  expect(evaluateNetworkDecision(decision, { first: "no" })).toEqual({ status: "unmet" });
+  expect(evaluateNetworkDecision(decision, { first: "yes" })).toEqual({ status: "missing", inputs: ["second"] });
+  expect(evaluateNetworkDecision(decision, { first: "yes", second: "yes" })).toEqual({
+    status: "applicable", action: { id: "selected", label: "Selected action" }, doNotConsiderScore: expect.closeTo(0.2, 12),
+  });
+  const either: NetworkDecision = { ...decision, condition: { kind: "any", operands: [
+    { kind: "equals", input: "first", value: "yes" },
+    { kind: "equals", input: "second", value: "yes" },
+  ] } };
+  expect(evaluateNetworkDecision(either, { first: "yes" })).toEqual({
+    status: "applicable", action: { id: "selected", label: "Selected action" }, scoreUnavailable: { reason: "missing", inputs: ["second"] },
+  });
+  expect(evaluateNetworkDecision(either, { first: "bad" })).toEqual({ status: "invalid", inputs: ["first"] });
+  const optional = { ...either, inputs: either.inputs.map((input) => ({ ...input, required: false })) };
+  expect(evaluateNetworkDecision(optional, { first: "yes" })).toEqual({
+    status: "applicable", action: { id: "selected", label: "Selected action" }, doNotConsiderScore: expect.closeTo(0.3, 12),
+  });
+  const impossible = { ...optional, nodes: optional.nodes.map((node) => node.id === "second"
+    ? { ...node, rows: [{ when: [], probabilities: [1, 0] }] } : node) };
+  expect(evaluateNetworkDecision(impossible, { first: "yes", second: "no" })).toEqual({
+    status: "applicable", action: { id: "selected", label: "Selected action" }, scoreUnavailable: { reason: "zero-likelihood" },
+  });
+});
+
+test("asks only for unanswered inputs that can change applicability across exact numeric thresholds", () => {
+  const decision: NetworkDecision = {
+    action: { node: "action", id: "selected", label: "Selected action" },
+    inputs: [
+      { id: "gate", node: "gate", required: false, values: ["yes", "no"], states: ["yes", "no"] },
+      { id: "reading", node: "reading", required: false, ranges: [{ minInclusive: false, maxInclusive: false, state: "any" }] },
+    ],
+    condition: { kind: "all", operands: [
+      { kind: "any", operands: [
+        { kind: "compare", input: "reading", operator: "lt", threshold: "0.30" },
+        { kind: "compare", input: "reading", operator: "gte", threshold: "3e-1" },
+      ] },
+      { kind: "equals", input: "gate", value: "yes" },
+    ] },
+    nodes: [
+      { id: "gate", states: ["yes", "no"], parents: [], rows: [{ when: [], probabilities: [0.5, 0.5] }] },
+      { id: "reading", states: ["any", "unused"], parents: [], rows: [{ when: [], probabilities: [1, 0] }] },
+      { id: "action", states: ["selected", "other"], parents: [], rows: [{ when: [], probabilities: [0.75, 0.25] }] },
+    ],
+  };
+  expect(evaluateNetworkDecision(decision, {})).toEqual({ status: "missing", inputs: ["gate"] });
+  expect(evaluateNetworkDecision(decision, { gate: "yes" })).toMatchObject({ status: "applicable", doNotConsiderScore: 0.25 });
 });
 
 test("returns an unmet condition when baseline checks are incomplete", () => {

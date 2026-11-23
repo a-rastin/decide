@@ -9,7 +9,7 @@ Medical documents used to build a decision support system, distinct from values 
 _Avoid_: Raw medical data
 
 **Case Input**:
-A value supplied for a synthetic case when using a generated decision support system.
+A categorical or numeric value supplied for a synthetic case when using a generated decision support system. Numeric values are entered in the declared unit; chart sampling intervals do not limit what the case accepts.
 
 **Clinical Decision**:
 An explicit or implicit choice about what to do next that is addressed by the Source Material. A choice of follow-up timing counts; a background fact does not count on its own.

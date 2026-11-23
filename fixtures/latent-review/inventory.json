@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "source": "source.md",
+  "decisions": [
+    { "id": "review-sample", "section": "§1 — Sample review", "status": "modeled" }
+  ],
+  "sections": []
+}

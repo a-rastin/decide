@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<decide-model version="3">
+  <case-input id="reading" label="Synthetic reading" type="numeric" unit="points" />
+  <network id="reading-network">
+    <node id="reading-band">
+      <state id="low" label="Low" />
+      <state id="boundary" label="Boundary" />
+      <state id="high" label="High" />
+      <row probabilities="0.4 0.2 0.4" />
+    </node>
+    <node id="action">
+      <state id="review" label="Review the synthetic reading" />
+      <state id="defer" label="Defer the synthetic review" />
+      <parent node="reading-band" />
+      <row when="low" probabilities="0.2 0.8" />
+      <row when="boundary" probabilities="0.5 0.5" />
+      <row when="high" probabilities="0.9 0.1" />
+    </node>
+  </network>
+  <route id="reading-exercise" label="Reading exercise">
+    <clinical-decision id="review-reading" title="Synthetic reading review" network="reading-network" action-node="action" guidance="review">
+      <observe input="reading" node="reading-band">
+        <range max="0.3" state="low" />
+        <range min="0.3" max="3e-1" min-inclusive="true" max-inclusive="true" state="boundary" />
+        <range min="3e-1" state="high" />
+      </observe>
+      <applicability>
+        <compare input="reading" operator="gte" threshold="0.1" />
+        <source-condition>The synthetic reading is at least 0.1 points.</source-condition>
+        <citation>Synthetic Reading Note §1</citation>
+      </applicability>
+      <research-modeling-convention>The reading band selects synthetic action weights, not clinical probabilities.</research-modeling-convention>
+    </clinical-decision>
+  </route>
+</decide-model>

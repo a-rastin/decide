@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<decide-model version="3">
+  <case-input id="first" label="Synthetic observation" type="categorical">
+    <value id="yes" label="Yes" /><value id="no" label="No" /><value id="impossible" label="Impossible" />
+  </case-input>
+  <case-input id="other" label="Synthetic observation" type="categorical">
+    <value id="yes" label="Yes" /><value id="no" label="No" /><value id="impossible" label="Impossible" />
+  </case-input>
+  <case-input id="shared" label="Shared synthetic marker" type="categorical">
+    <value id="yes" label="Yes" /><value id="no" label="No" />
+  </case-input>
+  <network id="joint">
+    <node id="observation">
+      <state id="yes" label="Yes" /><state id="no" label="No" /><state id="impossible" label="Impossible" />
+      <row probabilities="0.5 0.5 0" />
+    </node>
+    <node id="marker">
+      <state id="yes" label="Yes" /><state id="no" label="No" />
+      <row probabilities="0.5 0.5" />
+    </node>
+    <node id="action">
+      <state id="review" label="Review the synthetic sample" /><state id="defer" label="Defer the synthetic review" />
+      <parent node="observation" /><parent node="marker" />
+      <row when="yes yes" probabilities="0.1 0.9" /><row when="yes no" probabilities="0.3 0.7" />
+      <row when="no yes" probabilities="0.6 0.4" /><row when="no no" probabilities="0.8 0.2" />
+      <row when="impossible yes" probabilities="0.4 0.6" /><row when="impossible no" probabilities="0.4 0.6" />
+    </node>
+  </network>
+  <route id="first-route" label="First scenario">
+    <clinical-decision id="first-review" title="First synthetic decision" network="joint" action-node="action" guidance="review">
+      <observe input="first" node="observation">
+        <map value="yes" state="yes" /><map value="no" state="no" /><map value="impossible" state="impossible" />
+      </observe>
+      <observe input="shared" node="marker" required="true"><map value="yes" state="yes" /><map value="no" state="no" /></observe>
+      <applicability>
+        <all><equals input="first" value="yes" /><any><equals input="first" value="yes" /><equals input="shared" value="yes" /></any></all>
+        <source-condition>The first observation is Yes.</source-condition><citation>Synthetic Joint Note §1</citation>
+      </applicability>
+      <research-modeling-convention>These synthetic weights describe modeled action support, not clinical probability.</research-modeling-convention>
+    </clinical-decision>
+  </route>
+  <route id="second-route" label="Second scenario">
+    <clinical-decision id="second-review" title="Second synthetic decision" network="joint" action-node="action" guidance="review">
+      <observe input="shared" node="marker"><map value="yes" state="yes" /><map value="no" state="no" /></observe>
+      <observe input="other" node="observation">
+        <map value="yes" state="yes" /><map value="no" state="no" /><map value="impossible" state="impossible" />
+      </observe>
+      <applicability>
+        <any><equals input="other" value="yes" /><equals input="shared" value="yes" /></any>
+        <source-condition>The second observation or shared marker is Yes.</source-condition><citation>Synthetic Joint Note §2</citation>
+      </applicability>
+      <research-modeling-convention>These synthetic weights describe modeled action support, not clinical probability.</research-modeling-convention>
+    </clinical-decision>
+  </route>
+</decide-model>

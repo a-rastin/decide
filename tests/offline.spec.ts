@@ -19,6 +19,41 @@ test("mixed build preserves verified guidance offline after relocation", async (
   await checkMixedOffline(browser, relocated);
 });
 
+test("switching decisions in the same route discards the draft but reuses original Case Inputs by ID", async ({ browser }, testInfo) => {
+  const output = testInfo.outputPath("routed-sandbox");
+  const run = buildApp("fixtures/mixed-decisions/model.xml", output, ["--cases", "fixtures/mixed-decisions/cases.json"]);
+  expect(run.status, run.stderr).toBe(0);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    await page.getByText("Readiness", { exact: true }).click();
+    const decisions = page.getByRole("radiogroup", { name: "Choose a Clinical Decision" });
+    await decisions.getByText("Routine review", { exact: true }).click();
+    const originalInput = page.getByRole("region", { name: "Synthetic Case Input" });
+    const variant = page.getByRole("region", { name: "What-if variant" });
+    const open = page.getByRole("button", { name: "Open What-If Sandbox" });
+    await originalInput.getByText("Yes", { exact: true }).click();
+    await open.click();
+    await variant.getByText("No", { exact: true }).click();
+    await expect(variant.getByText("Guidance does not apply")).toBeVisible();
+
+    await decisions.getByText("Information pack", { exact: true }).click();
+    await expect(variant).toHaveCount(0);
+    await expect(originalInput.getByRole("radio", { name: "Yes", exact: true })).toBeChecked();
+    await open.click();
+    await expect(variant.getByRole("radio", { name: "Yes", exact: true })).toBeChecked();
+    await expect(variant.getByRole("heading", { name: "Offer the information pack" })).toBeVisible();
+
+    await decisions.getByText("Routine review", { exact: true }).click();
+    await open.click();
+    await expect(variant.getByRole("radio", { name: "Yes", exact: true })).toBeChecked();
+    await expect(variant.getByText("10%", { exact: true })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
 async function checkMixedOffline(browser: Browser, output: string) {
   const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
   const requests: string[] = [];
@@ -43,11 +78,12 @@ async function checkMixedOffline(browser: Browser, output: string) {
     const yes = input.getByRole("radio", { name: "Yes" });
     await input.getByText("Yes", { exact: true }).click();
     await expect(yes).toBeChecked();
-    await expect(page.getByRole("heading", { name: "Schedule a routine review" })).toBeVisible();
-    await expect(page.getByText("The initial checklist is complete.")).toBeVisible();
-    await expect(page.getByText("Synthetic Monitoring Note §1")).toBeVisible();
-    await expect(page.getByText("10%", { exact: true })).toBeVisible();
-    await expect(page.getByText(/does not estimate a clinical outcome/)).toBeVisible();
+    const result = page.getByRole("region", { name: "Decision result" });
+    await expect(result.getByRole("heading", { name: "Schedule a routine review" })).toBeVisible();
+    await expect(result.getByText("The initial checklist is complete.")).toBeVisible();
+    await expect(result.getByText("Synthetic Monitoring Note §1")).toBeVisible();
+    await expect(result.getByText("10%", { exact: true })).toBeVisible();
+    await expect(result.getByText(/does not estimate a clinical outcome/)).toBeVisible();
     await page.getByText("Information pack", { exact: true }).first().click();
     await expect(page.getByRole("heading", { name: "Offer the information pack" })).toBeVisible();
     await input.getByText("No", { exact: true }).click();
@@ -114,11 +150,12 @@ async function checkOfflineApp(browser: Browser, output: string, score: string) 
     await expect(page.getByText("Research only. Do not use for clinical care.")).toBeVisible();
 
     const input = page.getByRole("radiogroup", { name: "Were all baseline checks completed?" });
-    const sourceCondition = page.getByText("All baseline checks were completed.", { exact: true });
-    const citation = page.getByText("Synthetic Follow-up Note §1", { exact: true });
-    const scoreLabel = page.getByText("Do-Not-Consider Score", { exact: true });
-    const scoreValue = page.getByText(score, { exact: true });
-    const scoredResult = page.getByText("Recheck at six weeks", { exact: true }).or(scoreLabel).or(scoreValue);
+    const result = page.getByRole("region", { name: "Decision result" });
+    const sourceCondition = result.getByText("All baseline checks were completed.", { exact: true });
+    const citation = result.getByText("Synthetic Follow-up Note §1", { exact: true });
+    const scoreLabel = result.getByText("Do-Not-Consider Score", { exact: true });
+    const scoreValue = result.getByText(score, { exact: true });
+    const scoredResult = result.getByText("Recheck at six weeks", { exact: true }).or(scoreLabel).or(scoreValue);
     await expect(input).toBeVisible();
     await input.getByText("Yes", { exact: true }).click();
     await expect(input.getByRole("radio", { name: "Yes" })).toBeChecked();
@@ -148,7 +185,6 @@ async function checkOfflineApp(browser: Browser, output: string, score: string) 
     await expect(unknown).toBeVisible();
     await input.getByText("Unknown", { exact: true }).click();
     await expect(unknown).toBeChecked();
-    const result = page.getByRole("region", { name: "Decision result" });
     await expect(result.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
     await expect(result.getByText("Were all baseline checks completed?", { exact: true })).toBeVisible();
     await expect(result.getByText("Unmet source condition", { exact: true })).toHaveCount(0);
@@ -172,6 +208,60 @@ test("updates six-week guidance when the source condition changes offline, even 
 
   await rename(original, relocated);
   await checkOfflineApp(browser, relocated, "1%");
+});
+
+test("operates the legacy What-If Sandbox by keyboard with labeled stacked results", async ({ browser }, testInfo) => {
+  const output = testInfo.outputPath("legacy-sandbox");
+  expectSuccessfulBuild(fixture, output);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block", viewport: { width: 390, height: 844 } });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    const sandbox = page.getByRole("region", { name: "What-If Sandbox" });
+    const original = sandbox.getByRole("region", { name: "Original case" });
+    const variant = sandbox.getByRole("region", { name: "What-if variant" });
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("radio", { name: "Unknown", exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(sandbox.getByRole("button", { name: "Open What-If Sandbox" })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(original.getByRole("heading", { name: "Original case" })).toBeVisible();
+    await expect(variant.getByRole("heading", { name: "What-if variant" })).toBeVisible();
+    const originalBox = (await original.boundingBox())!;
+    const variantBox = (await variant.boundingBox())!;
+    expect(variantBox.y).toBeGreaterThanOrEqual(originalBox.y + originalBox.height);
+    await expect(original.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
+    await expect(original.getByText("Were all baseline checks completed?")).toBeVisible();
+    await expect(original.getByText("Synthetic Follow-up Note §1")).toBeVisible();
+
+    await page.keyboard.press("Tab");
+    await expect(variant.getByRole("radio", { name: "Unknown", exact: true })).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(variant.getByRole("radio", { name: "Yes", exact: true })).toBeChecked();
+    await expect(variant.getByRole("heading", { name: "Recheck at six weeks" })).toBeVisible();
+    await expect(variant.getByText("1%", { exact: true })).toBeVisible();
+    await expect(original.getByText("1%", { exact: true })).toHaveCount(0);
+    await expect(sandbox.getByRole("status")).toContainText("original case needs Case Inputs");
+
+    await page.keyboard.press("Tab");
+    await expect(sandbox.getByRole("button", { name: "Reset variant to original" })).toBeFocused();
+    await page.keyboard.press("Space");
+    await expect(variant.getByRole("radio", { name: "Unknown", exact: true })).toBeChecked();
+    await expect(variant.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
+    await page.reload();
+    await expect(sandbox.getByRole("button", { name: "Open What-If Sandbox" })).toBeVisible();
+
+    const inputs = page.getByRole("region", { name: "Synthetic Case Input" });
+    await inputs.getByText("Yes", { exact: true }).click();
+    const sensitivity = page.getByRole("region", { name: "Sensitivity Bars" });
+    await expect(sensitivity.getByRole("list", { name: "Comparable score ranges" })).toHaveCount(0);
+    await expect(sensitivity.getByRole("status")).toContainText(/only one category can be scored/i);
+    await expect(sensitivity.getByRole("row", { name: "Yes 1%" })).toBeVisible();
+    await expect(sensitivity.getByRole("cell", { name: /All baseline checks were completed/ })).toBeVisible();
+    await expect(sandbox.getByRole("button", { name: "Open What-If Sandbox" })).toBeEnabled();
+  } finally {
+    await context.close();
+  }
 });
 
 test("uses the supplied XML to score the same case at 95/5", async ({ browser }, testInfo) => {
@@ -229,14 +319,14 @@ test("routes verified categorical decisions and reuses only shared Case Input ID
       await page.getByText("Readiness", { exact: true }).first().click();
       await page.getByText("Routine review", { exact: true }).first().click();
       await expect(page.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
-      await page.getByText("Yes", { exact: true }).click();
+      await page.getByRole("region", { name: "Synthetic Case Input" }).getByText("Yes", { exact: true }).click();
       await expect(page.getByRole("heading", { name: "Schedule a routine review" })).toBeVisible();
       await page.getByText("Information pack", { exact: true }).first().click();
       await expect(page.getByRole("heading", { name: "Offer the information pack" })).toBeVisible();
       await page.getByText("Monitoring", { exact: true }).first().click();
       await page.getByText("Equipment inspection", { exact: true }).first().click();
       await expect(page.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
-      await page.getByText("No", { exact: true }).click();
+      await page.getByRole("region", { name: "Synthetic Case Input" }).getByText("No", { exact: true }).click();
       await expect(page.getByRole("heading", { name: "Guidance does not apply" })).toBeVisible();
       await page.getByText("Readiness", { exact: true }).first().click();
       await page.getByText("Routine review", { exact: true }).first().click();

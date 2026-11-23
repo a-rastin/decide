@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "source": "source.md",
+  "decisions": [
+    { "id": "joint-review", "section": "§1", "status": "modeled" },
+    { "id": "follow-up-review", "section": "§2", "status": "modeled" }
+  ],
+  "sections": []
+}

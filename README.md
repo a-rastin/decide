@@ -6,7 +6,7 @@
 
 ## Status
 
-The current implementation builds portable apps from hand-authored XML for the synthetic six-week and multi-decision examples. Automated source discovery and the remaining release features are not yet implemented. The full release requirements and project vocabulary are documented in the [user specification](dev-docs/user-specification.md) and [glossary](GLOSSARY.md).
+The current implementation builds portable apps from hand-authored XML, including the synthetic six-week, mixed multi-decision, and v3 offline case exploration examples. Automated source discovery and the remaining release features are not yet implemented. The full release requirements and project vocabulary are documented in the [user specification](dev-docs/user-specification.md) and [glossary](GLOSSARY.md).
 
 ## Build the six-week follow-up example
 
@@ -64,9 +64,51 @@ for model and case requirements.
 
 The same rerun and replacement rules apply as for the six-week build.
 
+## Build the v3 latent review example
+
+```sh
+npm run build -- fixtures/latent-review/model.xml path/to/output \
+  --cases fixtures/latent-review/cases.json \
+  --inventory fixtures/latent-review/inventory.json
+```
+
+Open the printed `index.html` directly. Choose **Clear** or **Flagged** to see
+how an observed categorical value changes the score for the same guidance
+option via an unobserved node. See the [v3 XML and verification contract](dev-docs/specs/2026-11-22-add-offline-case-exploration/xml-v3.md)
+for the expected scores, model syntax, and inference limit.
+
+## Build the v3 joint exploration example
+
+```sh
+npm run build -- fixtures/joint-exploration/model.xml path/to/output \
+  --cases fixtures/joint-exploration/cases.json \
+  --inventory fixtures/joint-exploration/inventory.json
+```
+
+Open the `index.html` path printed by the build directly from disk. Select
+**Synthetic exploration → Joint review**, enter **0.2** points, and select
+marker **A**. The original Do-Not-Consider Score is **80%**. The Sensitivity
+Bars show **30%–80%** for the reading and **60%–80%** for the marker, with
+tested values and reasons for unscored samples in the tables.
+
+Open the **What-If Sandbox** and change the variant to **0.31** points and
+marker **B**. The variant scores **10%**, a result neither sweep reaches from
+that original case. Reset restores the variant to the original inputs. To
+repeat the exercise offline, move the entire output folder and open its
+`index.html` at the new location. The folder also contains the original
+`model.xml`, `coverage-report.md`, and `test-report.md`.
+See the [worked scores](fixtures/joint-exploration/source.md#research-modeling-convention-and-worked-scores)
+and [Phase 3 validation record](dev-docs/specs/2026-11-22-add-offline-case-exploration/validation.md).
+
+With Playwright's Chromium installed, repeat this check automatically:
+
+```sh
+npm run test:offline -- -g 'reproduces joint exploration'
+```
+
 ## Run the tests
 
-Run `npm run test:validation` to check XML build validation and case evaluation with Vitest. This suite needs no browser. For offline browser checks, install Playwright's Chromium and any browser system dependencies for your platform.
+Run `npm run test:validation` to check XML build validation, case evaluation, and exact posterior inference with Vitest. This suite needs no browser. For offline browser checks, install Playwright's Chromium and any browser system dependencies for your platform.
 
 ```sh
 npx playwright install chromium
@@ -74,7 +116,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs both suites. Use `npm run test:offline` to run just the Playwright checks. They exercise case states, routing, and numeric thresholds from disk with networking disabled, repeat checks after moving the app, and verify scoring with a temporary 95/5 XML variant. See the [Phase 1 validation record](dev-docs/specs/2026-11-21-prove-offline-path/validation.md) and [Phase 2 validation record](dev-docs/specs/2026-11-22-verify-multi-decision-builds/validation.md).
+`npm test` runs both suites. Use `npm run test:offline` to run just the Playwright checks. They exercise case states, routing, and numeric thresholds from disk with networking disabled, repeat checks after moving the app, and verify scoring with a temporary 95/5 XML variant; the v3 network checks also cover exact inference, Sensitivity Bars, and the What-If Sandbox in a relocated app. See the [Phase 1 validation record](dev-docs/specs/2026-11-21-prove-offline-path/validation.md), [Phase 2 validation record](dev-docs/specs/2026-11-22-verify-multi-decision-builds/validation.md), and [Phase 3 validation record](dev-docs/specs/2026-11-22-add-offline-case-exploration/validation.md).
 
 ## How it is meant to work
 

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "cases": [
+    { "id": "below-source", "decision": "review-reading", "inputs": { "reading": 0.09999999999999999999 }, "expected": { "state": "unmet" } },
+    { "id": "at-source", "decision": "review-reading", "inputs": { "reading": 1e-1 }, "expected": { "state": "applicable", "guidance": "review", "score": 0.8 } },
+    { "id": "above-source", "decision": "review-reading", "inputs": { "reading": 0.10000000000000000001 }, "expected": { "state": "applicable", "guidance": "review", "score": 0.8 } },
+    { "id": "below-model", "decision": "review-reading", "inputs": { "reading": 0.29999999999999999999 }, "expected": { "state": "applicable", "guidance": "review", "score": 0.8 } },
+    { "id": "at-model", "decision": "review-reading", "inputs": { "reading": 0.300 }, "expected": { "state": "applicable", "guidance": "review", "score": 0.5 } },
+    { "id": "above-model", "decision": "review-reading", "inputs": { "reading": 0.30000000000000000001 }, "expected": { "state": "applicable", "guidance": "review", "score": 0.1 } },
+    { "id": "unanswered", "decision": "review-reading", "inputs": {}, "expected": { "state": "missing" } }
+  ]
+}

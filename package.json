@@ -15,7 +15,7 @@
   "scripts": {
     "build": "node src/build.ts",
     "test": "npm run test:validation && npm run test:offline",
-    "test:offline": "playwright test tests/offline.spec.ts",
+    "test:offline": "playwright test tests/offline.spec.ts tests/network-offline.spec.ts",
     "test:validation": "vitest run",
     "typecheck": "tsc --noEmit"
   },
