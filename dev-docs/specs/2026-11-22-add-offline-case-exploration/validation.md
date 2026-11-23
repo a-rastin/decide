@@ -6,12 +6,12 @@ Use synthetic Source Material and synthetic cases only. Expected results must be
 
 ## Fixture and build verification
 
-- [ ] The v3 fixture includes a routed build with a multi-input decision, a shared Case Input across decisions, and an unrelated input. Include a categorical sweep with comparable and inapplicable values and a numeric sweep in a declared unit with samples below, at, and above a threshold. Make at least two inputs produce distinct nonzero score spans, with a joint edit producing a different result from either isolated edit. Include a latent node and a multi-parent dependency and at least one posterior that cannot be read directly from any action table row.
-- [ ] Use the public build command to generate the fixture and inspect the reported output. It contains the original XML byte for byte, local assets, and separate coverage and test reports. Independent cases cover applicable, unmet, and missing results; scoreable cases check the selected action ID and score, and threshold cases exercise either side and exact equality. Include cases for optional evidence, an explicitly required score input, and zero-likelihood evidence.
-- [ ] Focused evaluator checks distinguish a decisive conjunction or disjunction with an unanswered operand from a genuinely indeterminate condition. Applicable but unscoreable guidance retains its source-supported action and reason, without a score.
-- [ ] Reject malformed tables (missing or duplicate parent rows, invalid probabilities, or non-normalized distributions), dangling references, cyclic graphs, ambiguous numeric partitions, inconsistent sampling declarations, and models outside any supported inference limits. A rejected build does not publish or change an existing artifact, including when replacement was requested.
-- [ ] Force an independently authored expected-result mismatch. In a mixed build the failure names the case and decision, unaffected verified decisions still work, and the app is labeled partial. When none verify, no new app is published. A successful default rerun leaves the earlier build unchanged.
-- [ ] Existing v1 and v2 build invocations and fixtures still pass. The six-week example retains the 1% Do-Not-Consider Score when applicable, not a clinical probability. The Phase 2 mixed fixture retains its threshold behavior, partial notice, excluded decision, and report semantics. Legacy decisions with no meaningful variation explain why and still offer the sandbox.
+- [x] The v3 fixture includes a routed build with a multi-input decision, a shared Case Input across decisions, and an unrelated input. Include a categorical sweep with comparable and inapplicable values and a numeric sweep in a declared unit with samples below, at, and above a threshold. Make at least two inputs produce distinct nonzero score spans, with a joint edit producing a different result from either isolated edit. Include a latent node and a multi-parent dependency and at least one posterior that cannot be read directly from any action table row.
+- [x] Use the public build command to generate the fixture and inspect the reported output. It contains the original XML byte for byte, local assets, and separate coverage and test reports. Independent cases cover applicable, unmet, and missing results; scoreable cases check the selected action ID and score, and threshold cases exercise either side and exact equality. Include cases for optional evidence, an explicitly required score input, and zero-likelihood evidence.
+- [x] Focused evaluator checks distinguish a decisive conjunction or disjunction with an unanswered operand from a genuinely indeterminate condition. Applicable but unscoreable guidance retains its source-supported action and reason, without a score.
+- [x] Reject malformed tables (missing or duplicate parent rows, invalid probabilities, or non-normalized distributions), dangling references, cyclic graphs, ambiguous numeric partitions, inconsistent sampling declarations, and models outside any supported inference limits. A rejected build does not publish or change an existing artifact, including when replacement was requested.
+- [x] Force an independently authored expected-result mismatch. In a mixed build the failure names the case and decision, unaffected verified decisions still work, and the app is labeled partial. When none verify, no new app is published. A successful default rerun leaves the earlier build unchanged.
+- [x] Existing v1 and v2 build invocations and fixtures still pass. The six-week example retains the 1% Do-Not-Consider Score when applicable, not a clinical probability. The Phase 2 mixed fixture retains its threshold behavior, partial notice, excluded decision, and report semantics. Legacy decisions with no meaningful variation explain why and still offer the sandbox.
 
 ## Offline browser acceptance
 
@@ -40,3 +40,62 @@ npm test
 ```
 
 Vitest covers model and build contracts plus focused inference checks. Playwright covers the generated app. Run the documented v3 fixture invocation and inspect both reports. Record the commands, results, and any manual accessibility checks in the implementation handoff. Do not mark Phase 3 complete until the checks above pass; they establish offline synthetic behavior, not clinical validity or first-release readiness.
+
+## Issue 07 implementation handoff — 2026-11-23
+
+On Node.js `v24.22.0`, `npm ci`, `npx playwright install chromium`, and
+`npm run typecheck` passed. npm reported a blocked esbuild postinstall script,
+but the builds succeeded. Playwright used the fallback Chromium build for
+Ubuntu 24.04.
+
+The initial `npm test` run hit the 120-second command limit during Vitest.
+The reported asset-publication test passed in isolation with
+`npm run test:validation -- tests/build-output.validation.test.ts -t 'ships the original XML and local assets'`.
+The focused `npm run test:validation -- tests/inference.validation.test.ts`
+run passed all 11 tests.
+
+`VITEST_MAX_WORKERS=1 npm test` passed all 91 Vitest tests before the
+300-second command limit interrupted the Playwright portion. A standalone
+`npm run test:offline` then passed all 18 Playwright tests. Together these
+runs verified both suites and the Phase 3 merge checklist, including the
+v1/v2 regressions.
+
+The following public invocations succeeded from the repository root:
+
+```sh
+npm run build -- fixtures/joint-exploration/model.xml /tmp/opencode/decide-issue-07.ebAcGb/joint \
+  --cases fixtures/joint-exploration/cases.json \
+  --inventory fixtures/joint-exploration/inventory.json
+cmp fixtures/joint-exploration/model.xml /tmp/opencode/decide-issue-07.ebAcGb/joint/model.xml
+npm run build -- fixtures/six-week-follow-up/model.xml /tmp/opencode/decide-issue-07.ebAcGb/six-week
+npm run build -- fixtures/mixed-decisions/model.xml /tmp/opencode/decide-issue-07.ebAcGb/mixed \
+  --inventory fixtures/mixed-decisions/inventory.json \
+  --cases fixtures/mixed-decisions/cases.json
+```
+
+The v3 build printed `joint/index.html` under the temporary directory. Its XML
+was byte-identical. The coverage report marked both decisions verified and
+delivered with no unfinished sections. Inspection of the separate test report
+found all 15 authored cases passed, with browser checks explicitly outside its
+scope. The v2 reports retained three verified decisions, the deliberate
+`equipment-yes-deliberate-mismatch` case, an unresolved decision, and a
+separately listed unprocessed appendix. The v1 and v2 builds also shipped
+their original XML byte for byte.
+
+The offline Playwright check runs the same walkthrough from the printed path
+and after moving the folder to a path with spaces, using fresh offline contexts
+with service workers blocked. It checks an 80% original, two ranked spans
+(50 and 20 percentage points), and a 10% joint variant absent from both
+one-input sweeps. It observes no external requests, WebSocket attempts, or
+uncaught page errors. Playwright also exercises keyboard routing, case and
+variant edits, sandbox opening and reset, and reads the labeled comparison
+and sample tables without hover. The keyboard check exposed an unselected
+routing group that was skipped by Tab and focus loss after selecting the
+first decision; both are now covered by the test. No separate manual
+screen-reader, contrast, or assistive-technology audit was performed.
+
+The walkthrough is in [network-offline.spec.ts](../../../tests/network-offline.spec.ts).
+The existing [network build tests](../../../tests/network-build.validation.test.ts)
+exercise rejection, verification failure isolation, and non-destructive
+reruns; [offline.spec.ts](../../../tests/offline.spec.ts) covers the v1 and
+v2 browser regressions.

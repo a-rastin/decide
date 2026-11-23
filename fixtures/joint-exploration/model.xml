@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<decide-model version="3">
+  <case-input id="reading" label="Synthetic reading" type="numeric" unit="points">
+    <sampling min="0.09" max="0.31">
+      <sample value="0.09" />
+      <sample value="0.1" />
+      <sample value="0.2" />
+      <sample value="0.300" />
+      <sample value="0.31" />
+    </sampling>
+  </case-input>
+  <case-input id="follow-up-reading" label="Synthetic reading" type="numeric" unit="points" />
+  <case-input id="marker" label="Shared synthetic marker" type="categorical">
+    <value id="a" label="A" /><value id="b" label="B" />
+    <value id="outside" label="Outside exercise" /><value id="impossible" label="Impossible" />
+  </case-input>
+  <network id="exploration">
+    <node id="reading-band">
+      <state id="low" label="Low" /><state id="boundary" label="Boundary" /><state id="high" label="High" />
+      <row probabilities="0.3 0.3 0.4" />
+    </node>
+    <node id="marker-state">
+      <state id="a" label="A" /><state id="b" label="B" />
+      <state id="outside" label="Outside exercise" /><state id="impossible" label="Impossible" />
+      <row probabilities="0.4 0.4 0.2 0" />
+    </node>
+    <node id="latent">
+      <state id="l" label="L" /><state id="r" label="R" />
+      <parent node="marker-state" />
+      <row when="a" probabilities="0.75 0.25" />
+      <row when="b" probabilities="0.25 0.75" />
+      <row when="outside" probabilities="0.5 0.5" />
+      <row when="impossible" probabilities="0.5 0.5" />
+    </node>
+    <node id="action">
+      <state id="review" label="Review the synthetic reading" /><state id="defer" label="Defer the synthetic review" />
+      <parent node="reading-band" /><parent node="latent" />
+      <row when="low l" probabilities="0.1 0.9" /><row when="low r" probabilities="0.5 0.5" />
+      <row when="boundary l" probabilities="0.2 0.8" /><row when="boundary r" probabilities="0.6 0.4" />
+      <row when="high l" probabilities="0.6 0.4" /><row when="high r" probabilities="1 0" />
+    </node>
+  </network>
+  <route id="exploration-route" label="Synthetic exploration">
+    <clinical-decision id="joint-review" title="Joint review" network="exploration" action-node="action" guidance="review">
+      <observe input="reading" node="reading-band">
+        <range max="0.3" state="low" />
+        <range min="0.3" max="0.3" min-inclusive="true" max-inclusive="true" state="boundary" />
+        <range min="0.3" state="high" />
+      </observe>
+      <observe input="marker" node="marker-state" required="true">
+        <map value="a" state="a" /><map value="b" state="b" />
+        <map value="outside" state="outside" /><map value="impossible" state="impossible" />
+      </observe>
+      <applicability>
+        <any>
+          <compare input="reading" operator="gte" threshold="0.3" />
+          <all>
+            <compare input="reading" operator="gte" threshold="0.1" />
+            <any><equals input="marker" value="a" /><equals input="marker" value="b" /><equals input="marker" value="impossible" /></any>
+          </all>
+        </any>
+        <source-condition>The reading is at least 0.3 points, or it is at least 0.1 points and the marker is not Outside exercise.</source-condition>
+        <citation>Synthetic Exploration Note §1</citation>
+      </applicability>
+      <research-modeling-convention>The action weights are synthetic model assumptions, not clinical probabilities.</research-modeling-convention>
+    </clinical-decision>
+    <clinical-decision id="follow-up-review" title="Follow-up review" network="exploration" action-node="action" guidance="review">
+      <observe input="follow-up-reading" node="reading-band">
+        <range max="0.3" state="low" />
+        <range min="0.3" max="0.3" min-inclusive="true" max-inclusive="true" state="boundary" />
+        <range min="0.3" state="high" />
+      </observe>
+      <observe input="marker" node="marker-state">
+        <map value="a" state="a" /><map value="b" state="b" />
+        <map value="outside" state="outside" /><map value="impossible" state="impossible" />
+      </observe>
+      <applicability>
+        <compare input="follow-up-reading" operator="gte" threshold="0.1" />
+        <source-condition>The follow-up reading is at least 0.1 points.</source-condition>
+        <citation>Synthetic Exploration Note §2</citation>
+      </applicability>
+      <research-modeling-convention>The action weights are synthetic model assumptions, not clinical probabilities.</research-modeling-convention>
+    </clinical-decision>
+  </route>
+</decide-model>

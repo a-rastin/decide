@@ -3,7 +3,9 @@
 Version 3 builds synthetic Clinical Decisions with categorical and numeric
 Case Inputs. See the [latent review fixture](../../../fixtures/latent-review/model.xml)
 for categorical evidence and the [numeric review fixture](../../../fixtures/numeric-review/model.xml)
-for threshold partitions. The [Phase 2 input contract](../2026-11-22-verify-multi-decision-builds/inputs.md)
+for threshold partitions. The [joint exploration fixture](../../../fixtures/joint-exploration/model.xml)
+combines both with authored numeric samples and multiple routed decisions.
+The [Phase 2 input contract](../2026-11-22-verify-multi-decision-builds/inputs.md)
 and the default v1 build remain unchanged.
 
 ```sh
@@ -152,6 +154,14 @@ The interval does not limit case entry. If `sampling` is omitted, the app
 explains why it skipped the input rather than choosing bounds or test values.
 Only samples with comparable scores contribute to the plotted range.
 
+The joint exploration fixture shares one marker ID between its two decisions.
+Their readings have the same label and unit but different IDs; only the
+joint review reading declares samples. Its action node has two parents:
+the observed reading band and an unobserved state conditioned on the marker.
+The [fixture's worked scores](../../../fixtures/joint-exploration/source.md#research-modeling-convention-and-worked-scores)
+show how marginalizing that state leads to different one-input spans and a
+joint variant score that neither one-input sweep reaches.
+
 ## Verification and publication
 
 Both `--cases` and `--inventory` are required. Use the [same JSON version 1
@@ -178,3 +188,8 @@ The command ships the original XML byte for byte, local app assets,
 case checks, not Playwright runs. A failed decision is excluded, and if none
 verify, nothing is published. Malformed models cannot modify previous
 artifacts, even with `--replace`. The default rerun writes a new output folder.
+
+The build-case format requires a numeric score for `applicable` expectations.
+The joint fixture checks applicable-but-unscoreable states (missing required
+evidence and zero-likelihood evidence) through Playwright, separately from
+its build-time report. See the [joint fixture build and exploration steps](../../../README.md#build-the-v3-joint-exploration-example).

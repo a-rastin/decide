@@ -54,7 +54,7 @@ export function SensitivityBars({ model, values, result }: { model: CaseModel; v
           {baseline.score === undefined ? `No comparison: the original case cannot be scored. ${baseline.reason}`
             : sweeps.length === 0 ? "No Case Inputs can be varied for this decision."
               : sweeps.length === 1 && sweeps[0].scores.length === 1
-                ? "No comparison: only one tested value can be scored."
+                ? `No comparison: only one ${"values" in sweeps[0].input ? "category" : "tested value"} can be scored.`
                 : "No comparison: no Case Input has two comparable scores."}
         </p>
       )}

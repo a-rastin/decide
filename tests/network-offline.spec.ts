@@ -1,8 +1,226 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { buildApp } from "./build-app.ts";
+
+const explorationFixture = "fixtures/joint-exploration";
+
+function buildExploration(output: string) {
+  const run = buildApp(`${explorationFixture}/model.xml`, output, [
+    "--cases", `${explorationFixture}/cases.json`, "--inventory", `${explorationFixture}/inventory.json`,
+  ]);
+  expect(run.status, run.stderr).toBe(0);
+  const entry = run.stdout.match(/^Generated (.+)$/m)?.[1];
+  expect(entry, run.stdout).toBe(join(output, "index.html"));
+  return entry!;
+}
+
+test("publishes the routed exploration fixture with its original XML and separate verification reports", async ({}, testInfo) => {
+  const folder = dirname(buildExploration(testInfo.outputPath("exploration-artifacts")));
+  expect(await readFile(join(folder, "model.xml"))).toEqual(await readFile(`${explorationFixture}/model.xml`));
+  for (const asset of ["index.html", "app.js", "app.css"]) {
+    expect((await readFile(join(folder, asset))).length).toBeGreaterThan(0);
+  }
+  const coverage = await readFile(join(folder, "coverage-report.md"), "utf8");
+  expect(coverage).toMatch(/joint-review.*verified and delivered/);
+  expect(coverage).toMatch(/follow-up-review.*verified and delivered/);
+  const report = await readFile(join(folder, "test-report.md"), "utf8");
+  expect(report).toContain("Case joint-both-edits: passed");
+  expect(report).toContain("Case follow-up-optional-marker: passed");
+  expect(report).not.toContain(": failed");
+});
+
+test("reproduces joint exploration from the printed entry point before and after relocation", async ({ browser }, testInfo) => {
+  const entry = buildExploration(testInfo.outputPath("exploration-app"));
+  const relocated = testInfo.outputPath("relocated exploration app");
+  async function exerciseAt(path: string) {
+    const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+    const requests: string[] = [];
+    const sockets: string[] = [];
+    const errors: string[] = [];
+    context.on("request", (request) => {
+      if (!["file:", "data:", "blob:"].includes(new URL(request.url()).protocol)) requests.push(request.url());
+    });
+    try {
+      const page = await context.newPage();
+      page.on("websocket", (socket) => sockets.push(socket.url()));
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(pathToFileURL(path).href);
+      await exerciseJointExploration(page);
+      expect(requests).toEqual([]);
+      expect(sockets).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }
+  await test.step("at the printed entry point", () => exerciseAt(entry));
+  await rename(dirname(entry), relocated);
+  await test.step("after moving the entire folder", () => exerciseAt(join(relocated, relative(dirname(entry), entry))));
+});
+
+async function exerciseJointExploration(page: Page) {
+  const inputs = page.getByRole("region", { name: "Synthetic Case Input" });
+  const reading = inputs.getByRole("textbox", { name: "Synthetic reading (points)" });
+  const marker = inputs.getByRole("radiogroup", { name: "Shared synthetic marker" });
+  const result = page.getByRole("region", { name: "Decision result" });
+  const sensitivity = page.getByRole("region", { name: "Sensitivity Bars" });
+  const ranges = sensitivity.getByRole("list", { name: "Comparable score ranges" });
+  const samples = (name: string) => sensitivity.getByRole("table", { name }).getByRole("row")
+    .filter({ has: page.getByRole("rowheader") });
+  const condition = "The reading is at least 0.3 points, or it is at least 0.1 points and the marker is not Outside exercise.";
+  const sandbox = page.getByRole("region", { name: "What-If Sandbox" });
+  const open = sandbox.getByRole("button", { name: "Open What-If Sandbox" });
+  const original = sandbox.getByRole("region", { name: "Original case" });
+  const variant = sandbox.getByRole("region", { name: "What-if variant" });
+  const draftReading = variant.getByRole("textbox", { name: "Synthetic reading (points)" });
+  const draftMarker = variant.getByRole("radiogroup", { name: "Shared synthetic marker" });
+  const comparison = sandbox.getByRole("status");
+  const keyboard = page.keyboard;
+
+  await expect(page.getByText(/Research only/)).toBeVisible();
+  await expect(inputs).toHaveCount(0);
+  await keyboard.press("Tab");
+  await expect(page.getByRole("radio", { name: "Synthetic exploration" })).toBeFocused();
+  await keyboard.press("Space");
+  await expect(inputs).toHaveCount(0);
+  await keyboard.press("Tab");
+  await expect(page.getByRole("radio", { name: "Joint review" })).toBeFocused();
+  await keyboard.press("Space");
+  await expect(page.getByRole("radio", { name: "Joint review" })).toBeFocused();
+  await keyboard.press("Tab");
+  await expect(reading).toBeFocused();
+  await expect(inputs.getByRole("textbox")).toHaveCount(1);
+  await expect(inputs.getByRole("radiogroup")).toHaveCount(1);
+  await keyboard.type("0.2");
+  await keyboard.press("Tab");
+  await expect(marker.getByRole("radio", { name: "Unknown" })).toBeFocused();
+  await keyboard.press("ArrowDown");
+  await expect(marker.getByRole("radio", { name: "A", exact: true })).toBeChecked();
+  await expect(result.getByRole("heading", { name: "Review the synthetic reading" })).toBeVisible();
+  await expect(result.getByText(condition)).toBeVisible();
+  await expect(result.getByText("Synthetic Exploration Note §1")).toBeVisible();
+
+  async function expectBaselineChart() {
+    // Independent weighted sums and spans are worked out in the fixture's source.md.
+    await expect(result.getByText("80%", { exact: true })).toBeVisible();
+    await expect(ranges.getByRole("listitem")).toHaveText([
+      /Synthetic reading.*30%–80%/, /Shared synthetic marker.*60%–80%/,
+    ]);
+    await expect(sensitivity.getByRole("table", { name: "Synthetic reading" })).toBeVisible();
+    await expect(sensitivity.getByRole("table", { name: "Shared synthetic marker" })).toBeVisible();
+    await expect(samples("Synthetic reading")).toHaveText([
+      `0.09 pointsGuidance does not apply. Source condition: ${condition}`,
+      /^0\.1 points\s*80%$/, /^0\.2 points\s*80%$/, /^0\.300 points\s*70%$/, /^0\.31 points\s*30%$/,
+    ]);
+    await expect(samples("Shared synthetic marker")).toHaveText([
+      /^A\s*80%$/, /^B\s*60%$/,
+      `Outside exerciseGuidance does not apply. Source condition: ${condition}`,
+      /Impossible.*zero probability/,
+    ]);
+    await expect(sensitivity.getByRole("cell", { name: "10%", exact: true })).toHaveCount(0);
+  }
+  await expectBaselineChart();
+
+  await keyboard.press("Tab");
+  await expect(open).toBeFocused();
+  await keyboard.press("Enter");
+  await expect(original.getByRole("heading", { name: "Original case" })).toBeVisible();
+  await expect(variant.getByRole("heading", { name: "What-if variant" })).toBeVisible();
+  await expect(original.getByText("80%", { exact: true })).toBeVisible();
+  await expect(variant.getByText("80%", { exact: true })).toBeVisible();
+  await keyboard.press("Tab");
+  await expect(draftReading).toBeFocused();
+  await keyboard.press("ControlOrMeta+a");
+  await keyboard.type("0.31");
+  await expect(variant.getByText("30%", { exact: true })).toBeVisible();
+  await keyboard.press("Tab");
+  await expect(draftMarker.getByRole("radio", { name: "A", exact: true })).toBeFocused();
+  await keyboard.press("ArrowDown");
+  await expect(variant.getByRole("heading", { name: "Review the synthetic reading" })).toBeVisible();
+  await expect(variant.getByText("10%", { exact: true })).toBeVisible();
+  await expect(comparison).toContainText("-70 percentage points");
+  await expect(reading).toHaveValue("0.2");
+  await expect(marker.getByRole("radio", { name: "A", exact: true })).toBeChecked();
+  await expect(original.getByText("80%", { exact: true })).toBeVisible();
+  await expectBaselineChart();
+
+  const reset = variant.getByRole("button", { name: "Reset variant to original" });
+  await keyboard.press("Tab");
+  await expect(reset).toBeFocused();
+  await keyboard.press("Space");
+  await expect(draftReading).toHaveValue("0.2");
+  await expect(draftMarker.getByRole("radio", { name: "A", exact: true })).toBeChecked();
+  await expect(variant.getByText("80%", { exact: true })).toBeVisible();
+  await expect(comparison).toContainText("No modeled change");
+  await expectBaselineChart();
+
+  await draftMarker.getByText("B", { exact: true }).click();
+  await expect(variant.getByText("60%", { exact: true })).toBeVisible();
+  await reading.fill("0.300");
+  await expect(result.getByText("70%", { exact: true })).toBeVisible();
+  await expect(original.getByText("70%", { exact: true })).toBeVisible();
+  await expect(ranges.getByRole("listitem")).toHaveText([
+    /Synthetic reading.*30%–80%/, /Shared synthetic marker.*50%–70%/,
+  ]);
+  await expect(draftReading).toHaveValue("0.2");
+  await expect(draftMarker.getByRole("radio", { name: "B", exact: true })).toBeChecked();
+  await expect(variant.getByText("60%", { exact: true })).toBeVisible();
+  await expect(comparison).toContainText("-10 percentage points");
+
+  await keyboard.press("Shift+Tab");
+  await expect(page.getByRole("radio", { name: "Joint review" })).toBeFocused();
+  await keyboard.press("ArrowDown");
+  await expect(page.getByRole("radio", { name: "Follow-up review" })).toBeChecked();
+  await expect(variant).toHaveCount(0);
+  await expect(reading).toHaveValue("");
+  await expect(marker.getByRole("radio", { name: "A", exact: true })).toBeChecked();
+  await expect(sensitivity.getByText(/Synthetic reading was not varied: no sampling declaration/)).toBeVisible();
+  await keyboard.press("ArrowUp");
+  await expect(page.getByRole("radio", { name: "Joint review" })).toBeChecked();
+  await expect(variant).toHaveCount(0);
+  await expect(reading).toHaveValue("0.300");
+  await open.click();
+  await expect(draftReading).toHaveValue("0.300");
+  await expect(draftMarker.getByRole("radio", { name: "A", exact: true })).toBeChecked();
+  await draftReading.fill("0.31");
+  await expect(variant.getByText("30%", { exact: true })).toBeVisible();
+  await reset.click();
+  await expect(draftReading).toHaveValue("0.300");
+  await expect(variant.getByText("70%", { exact: true })).toBeVisible();
+  const close = sandbox.getByRole("button", { name: "Close What-If Sandbox" });
+  await close.click();
+
+  for (const [value, state, reason] of [
+    ["", "Missing Case Input", "needs Case Inputs to determine whether guidance applies"],
+    ["not a number", "Invalid Case Input: Synthetic reading (points)", "has an invalid Case Input"],
+    ["0.09", "Guidance does not apply", "has guidance that does not apply"],
+  ]) {
+    await reading.fill(value);
+    await expect(ranges).toHaveCount(0);
+    await open.click();
+    await expect(original.getByText(state, { exact: true })).toBeVisible();
+    await expect(original.getByRole("heading", { name: "Do-Not-Consider Score" })).toHaveCount(0);
+    await draftReading.fill("0.31");
+    await draftMarker.getByText("B", { exact: true }).click();
+    await expect(variant.getByText("10%", { exact: true })).toBeVisible();
+    await expect(comparison).toHaveText(`Score comparison unavailable: the original case ${reason}.`);
+    await expect(reading).toHaveValue(value);
+    await expect(ranges).toHaveCount(0);
+    await close.click();
+  }
+
+  await reading.fill("0.300");
+  await marker.getByText("Unknown", { exact: true }).click();
+  await expect(result.getByRole("heading", { name: "Review the synthetic reading" })).toBeVisible();
+  await expect(result.getByText("No score. Supply: Shared synthetic marker.")).toBeVisible();
+  await expect(ranges).toHaveCount(0);
+  await marker.getByText("Impossible", { exact: true }).click();
+  await expect(result.getByRole("heading", { name: "Review the synthetic reading" })).toBeVisible();
+  await expect(result.getByText(/No score.*zero probability/)).toBeVisible();
+  await expect(ranges).toHaveCount(0);
+}
 
 test("scores the source-selected v3 action through a latent node in a relocated offline app", async ({ browser }, testInfo) => {
   const fixture = "fixtures/latent-review";

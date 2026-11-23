@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "cases": [
+    { "id": "joint-below-source", "decision": "joint-review", "inputs": { "reading": 0.09, "marker": "a" }, "expected": { "state": "unmet" } },
+    { "id": "joint-at-source", "decision": "joint-review", "inputs": { "reading": 0.1, "marker": "a" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.8 } },
+    { "id": "joint-above-source-below-model", "decision": "joint-review", "inputs": { "reading": 0.2, "marker": "a" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.8 } },
+    { "id": "joint-at-model", "decision": "joint-review", "inputs": { "reading": 0.300, "marker": "a" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.7 } },
+    { "id": "joint-reading-only-edit", "decision": "joint-review", "inputs": { "reading": 0.31, "marker": "a" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.3 } },
+    { "id": "joint-marker-only-edit", "decision": "joint-review", "inputs": { "reading": 0.2, "marker": "b" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.6 } },
+    { "id": "joint-both-edits", "decision": "joint-review", "inputs": { "reading": 0.31, "marker": "b" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.1 } },
+    { "id": "joint-outside", "decision": "joint-review", "inputs": { "reading": 0.2, "marker": "outside" }, "expected": { "state": "unmet" } },
+    { "id": "joint-missing-marker", "decision": "joint-review", "inputs": { "reading": 0.2 }, "expected": { "state": "missing" } },
+    { "id": "follow-up-below-source", "decision": "follow-up-review", "inputs": { "follow-up-reading": 0.09, "marker": "a" }, "expected": { "state": "unmet" } },
+    { "id": "follow-up-at-source", "decision": "follow-up-review", "inputs": { "follow-up-reading": 0.1, "marker": "a" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.8 } },
+    { "id": "follow-up-optional-marker", "decision": "follow-up-review", "inputs": { "follow-up-reading": 0.2 }, "expected": { "state": "applicable", "guidance": "review", "score": 0.7 } },
+    { "id": "follow-up-at-model", "decision": "follow-up-review", "inputs": { "follow-up-reading": 0.3, "marker": "a" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.7 } },
+    { "id": "follow-up-above-model", "decision": "follow-up-review", "inputs": { "follow-up-reading": 0.31, "marker": "a" }, "expected": { "state": "applicable", "guidance": "review", "score": 0.3 } },
+    { "id": "follow-up-missing-reading", "decision": "follow-up-review", "inputs": { "marker": "a" }, "expected": { "state": "missing" } }
+  ]
+}
