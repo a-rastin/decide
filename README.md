@@ -108,7 +108,7 @@ npm run test:offline -- -g 'reproduces joint exploration'
 
 ## Run the tests
 
-Run `npm run test:validation` to check XML build validation and case evaluation with Vitest. This suite needs no browser. For offline browser checks, install Playwright's Chromium and any browser system dependencies for your platform.
+Run `npm run test:validation` to check XML build validation, case evaluation, and exact posterior inference with Vitest. This suite needs no browser. For offline browser checks, install Playwright's Chromium and any browser system dependencies for your platform.
 
 ```sh
 npx playwright install chromium
@@ -116,7 +116,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs both suites. Use `npm run test:offline` to run just the Playwright checks. They exercise case states, routing, and numeric thresholds from disk with networking disabled, repeat checks after moving the app, and verify scoring with a temporary 95/5 XML variant. See the [Phase 1 validation record](dev-docs/specs/2026-11-21-prove-offline-path/validation.md) and [Phase 2 validation record](dev-docs/specs/2026-11-22-verify-multi-decision-builds/validation.md).
+`npm test` runs both suites. Use `npm run test:offline` to run just the Playwright checks. They exercise case states, routing, and numeric thresholds from disk with networking disabled, repeat checks after moving the app, and verify scoring with a temporary 95/5 XML variant; the v3 network checks also cover exact inference, Sensitivity Bars, and the What-If Sandbox in a relocated app. See the [Phase 1 validation record](dev-docs/specs/2026-11-21-prove-offline-path/validation.md), [Phase 2 validation record](dev-docs/specs/2026-11-22-verify-multi-decision-builds/validation.md), and [Phase 3 validation record](dev-docs/specs/2026-11-22-add-offline-case-exploration/validation.md).
 
 ## How it is meant to work
 
