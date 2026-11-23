@@ -232,7 +232,13 @@ export interface DecideModel {
 }
 
 export type CategoricalCaseInput = { id: string; label: string; values: CaseValue[] };
-type NumericCaseInput = { id: string; label: string; type: "numeric"; unit: string };
+type NumericCaseInput = {
+  id: string;
+  label: string;
+  type: "numeric";
+  unit: string;
+  sampling?: { min: string; max: string; samples: string[] };
+};
 export type NetworkCaseInput = CategoricalCaseInput | NumericCaseInput;
 
 export interface NetworkModelDecision {

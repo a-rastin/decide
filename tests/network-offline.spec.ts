@@ -325,6 +325,7 @@ test("shows exact numeric source and model boundaries and distinguishes unavaila
     const input = page.getByRole("region", { name: "Synthetic Case Input" }).getByRole("textbox", { name: "Synthetic reading (points)" });
     const result = page.getByRole("region", { name: "Decision result" });
     const score = result.getByRole("heading", { name: "Do-Not-Consider Score" });
+    const sensitivity = page.getByRole("region", { name: "Sensitivity Bars" });
     await expect(result.getByRole("heading", { name: "Missing Case Input" })).toBeVisible();
     await expect(result.getByText("Synthetic reading (points)", { exact: true })).toBeVisible();
     await expect(score).toHaveCount(0);
@@ -342,6 +343,8 @@ test("shows exact numeric source and model boundaries and distinguishes unavaila
       await expect(result.getByText("Synthetic Reading Note §1")).toBeVisible();
       await expect(result.getByText(expected, { exact: true })).toBeVisible();
     }
+    await expect(sensitivity.getByText(/Synthetic reading.*not varied.*no sampling declaration/i)).toBeVisible();
+    await expect(sensitivity.getByRole("table", { name: "Synthetic reading" })).toHaveCount(0);
     await input.fill("0.3 points");
     await expect(result.getByRole("alert")).toHaveText("Invalid Case Input: Synthetic reading (points)");
     await expect(input).toHaveAttribute("aria-invalid", "true");
@@ -365,6 +368,83 @@ test("shows exact numeric source and model boundaries and distinguishes unavaila
     await expect(sandbox.getByRole("status")).toContainText("what-if variant needs Case Inputs");
     await expect(input).toHaveValue("0.300");
     await expect(result.getByText("50%", { exact: true })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test("ranks authored numeric samples with categorical bars while holding the other input fixed offline", async ({ browser }, testInfo) => {
+  const fixture = "fixtures/numeric-review";
+  const model = testInfo.outputPath("sampled-reading.xml");
+  const output = testInfo.outputPath("numeric-sensitivity");
+  await mkdir(testInfo.outputDir, { recursive: true });
+  await writeFile(model, (await readFile(`${fixture}/model.xml`, "utf8"))
+    .replace('unit="points" />', `unit="points">
+      <sampling min="0.09" max="0.31">
+        <sample value="0.09999999999999999999" />
+        <sample value="1e-1" />
+        <sample value="0.29999999999999999999" />
+        <sample value="0.300" />
+        <sample value="0.30000000000000000001" />
+      </sampling>
+    </case-input>
+    <case-input id="marker" label="Synthetic marker" type="categorical">
+      <value id="a" label="A" /><value id="b" label="B" />
+    </case-input>`)
+    .replace('<node id="action">', `<node id="marker-state">
+      <state id="a" label="A" /><state id="b" label="B" />
+      <row probabilities="0.5 0.5" />
+    </node>
+    <node id="action">`)
+    .replace(/<row when="low"[^]*?(?=\n    <\/node>)/, `<parent node="marker-state" />
+      <row when="low a" probabilities="0.1 0.9" />
+      <row when="low b" probabilities="0.3 0.7" />
+      <row when="boundary a" probabilities="0.3 0.7" />
+      <row when="boundary b" probabilities="0.7 0.3" />
+      <row when="high a" probabilities="0.9 0.1" />
+      <row when="high b" probabilities="0.9 0.1" />`)
+    .replace('<observe input="reading"', `<observe input="marker" node="marker-state">
+      <map value="a" state="a" /><map value="b" state="b" />
+    </observe>
+    <observe input="reading"`));
+  const run = buildApp(model, output, ["--cases", `${fixture}/cases.json`, "--inventory", `${fixture}/inventory.json`]);
+  expect(run.status, run.stderr).toBe(0);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    const inputs = page.getByRole("region", { name: "Synthetic Case Input" });
+    const reading = inputs.getByRole("textbox", { name: "Synthetic reading (points)" });
+    await reading.fill("0.300");
+    await inputs.getByRole("radiogroup", { name: "Synthetic marker" }).getByText("A", { exact: true }).click();
+
+    const sensitivity = page.getByRole("region", { name: "Sensitivity Bars" });
+    const ranges = sensitivity.getByRole("list", { name: "Comparable score ranges" });
+    // For marker A the low, boundary, and high scores are 90%, 70%, and 10%.
+    // Marker B changes the boundary score to 30%, not any of the reading samples.
+    await expect(ranges.getByRole("listitem")).toHaveText([
+      /Synthetic reading.*10%–90%/, /Synthetic marker.*30%–70%/,
+    ]);
+    const samples = sensitivity.getByRole("table", { name: "Synthetic reading" });
+    const rows = samples.getByRole("row").filter({ has: page.getByRole("rowheader") });
+    await expect(rows).toHaveText([
+      /^0\.09999999999999999999 points.*Source condition: The synthetic reading is at least 0\.1 points\.$/,
+      /^1e-1 points\s*90%$/,
+      /^0\.29999999999999999999 points\s*90%$/,
+      /^0\.300 points\s*70%$/,
+      /^0\.30000000000000000001 points\s*10%$/,
+    ]);
+    await expect(rows.first().getByRole("cell")).not.toContainText("%");
+
+    // The chart interval is not a case input restriction and does not add the
+    // current case's reading to the authored samples.
+    await reading.fill("1");
+    const result = page.getByRole("region", { name: "Decision result" });
+    await expect(result.getByText("10%", { exact: true })).toBeVisible();
+    await expect(ranges.getByRole("listitem")).toHaveText([
+      /Synthetic reading.*10%–90%/, /Synthetic marker.*No modeled change.*10%/,
+    ]);
+    await expect(rows).toHaveCount(5);
   } finally {
     await context.close();
   }

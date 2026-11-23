@@ -171,3 +171,56 @@ test.each([
   expect(await readArtifact(output)).toEqual(before);
   expect((await readdir(directory)).sort()).toEqual(["app", "invalid.xml"]);
 }, 15_000);
+
+async function expectRejectedSampling(sampling: string, diagnostic: RegExp) {
+  const fixture = "fixtures/numeric-review";
+  const authored = await readFile(`${fixture}/model.xml`, "utf8");
+  const invalid = join(directory, "invalid.xml");
+  const output = join(directory, "app");
+  const changed = authored.replace('unit="points" />', `unit="points">${sampling}</case-input>`);
+  expect(changed).not.toBe(authored);
+  await writeFile(invalid, changed);
+  const run = buildApp(invalid, output, ["--cases", `${fixture}/cases.json`, "--inventory", `${fixture}/inventory.json`, "--replace"]);
+  expect(run.status).not.toBe(0);
+  expect(run.stderr).toMatch(diagnostic);
+  expect(await readArtifact(output)).toEqual(before);
+  expect((await readdir(directory)).sort()).toEqual(["app", "invalid.xml"]);
+}
+
+test.each([
+  ["inverted interval", '<sampling min="0.4" max="0.1"><sample value="0.2"/></sampling>', /inverted sampling interval/],
+  ["non-decimal bound", '<sampling min="0" max="Infinity"><sample value="0.2"/></sampling>', /invalid sampling max/i],
+  ["no samples", '<sampling min="0" max="0.4"/>', /requires at least one sample/],
+  ["non-decimal sample", '<sampling min="0" max="0.4"><sample value="NaN"/></sampling>', /invalid sample value/i],
+  ["out-of-interval sample", '<sampling min="0" max="0.3"><sample value="0.30000000000000000001"/></sampling>', /sample .*outside/],
+  ["exact decimal duplicate", '<sampling min="0" max="0.4"><sample value="0.30"/><sample value="3e-1"/></sampling>', /duplicate sample/i],
+] as const)("rejects numeric sampling with %s before replacing an existing artifact", async (_name, sampling, diagnostic) => {
+  await expectRejectedSampling(sampling, diagnostic);
+}, 15_000);
+
+test.each([
+  ["source boundary", ["0.09", "0.2", "3e-1", "0.31"], /sample at threshold 0\.1/],
+  ["model boundary", ["0.09", "1e-1", "0.2", "0.30000000000000000001"], /sample at threshold 0\.3/],
+  ["below the source boundary", ["0.1", "0.2", "0.3", "0.31"], /sample below threshold 0\.1/],
+  ["above the model boundary", ["0.09", "0.1", "0.2", "0.3"], /sample above threshold 0\.3/],
+] as const)("rejects numeric sampling without a sample at or on the required side of %s", async (_name, values, diagnostic) => {
+  await expectRejectedSampling(
+    `<sampling min="0.09" max="0.31">${values.map((value) => `<sample value="${value}"/>`).join("")}</sampling>`,
+    diagnostic,
+  );
+}, 15_000);
+
+test("accepts authored samples at closed interval ends without requiring samples outside the interval", async ({ onTestFinished }) => {
+  const directory = await mkdtemp(join(tmpdir(), "decide-sampling-ends-"));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const fixture = "fixtures/numeric-review";
+  const model = join(directory, "sampled.xml");
+  const output = join(directory, "app");
+  const authored = await readFile(`${fixture}/model.xml`, "utf8");
+  await writeFile(model, authored.replace('unit="points" />', `unit="points">
+    <sampling min="0.1" max="3e-1"><sample value="1e-1"/><sample value="0.300"/></sampling>
+  </case-input>`));
+  const run = buildApp(model, output, ["--cases", `${fixture}/cases.json`, "--inventory", `${fixture}/inventory.json`]);
+  expect(run.status, run.stderr).toBe(0);
+  expect(await readFile(join(output, "model.xml"))).toEqual(await readFile(model));
+}, 30_000);

@@ -17,18 +17,27 @@ export function SensitivityBars({ model, values, result }: { model: CaseModel; v
   const { decision } = model;
   const action = "action" in decision ? decision.action : decision.distribution.guidance;
   const baseline = sampleOutcome(model, result, action.id);
-  const sweeps = caseInputsFor(model).filter((input) => "values" in input).map((input) => {
-    const samples = input.values.map(({ id, label }) => ({
-      id, label: caseValueDisplayLabel(label),
+  const inputs = caseInputsFor(model);
+  const unsampled = inputs.filter((input) => "type" in input && !input.sampling);
+  const sweeps = inputs.flatMap((input) => {
+    const domain = "values" in input
+      ? input.values.map(({ id, label }) => ({ id, label: caseValueDisplayLabel(label) }))
+      : input.sampling?.samples.map((value) => ({ id: value, label: `${value} ${input.unit}` }));
+    if (!domain) return [];
+    const samples = domain.map(({ id, label }) => ({
+      id, label,
       ...sampleOutcome(model, evaluateCase(model, { ...values, [input.id]: id }), action.id),
     }));
     const scores = samples.flatMap(({ score }) => score === undefined ? [] : [score]);
-    return { input, samples, scores };
+    return [{ input, samples, scores }];
   });
   const ranges = baseline.score === undefined ? [] : sweeps.flatMap(({ input, scores }) => {
     if (scores.length < 2) return [];
-    const min = Math.min(...scores);
-    const max = Math.max(...scores);
+    let min = scores[0], max = scores[0];
+    for (const score of scores) {
+      min = Math.min(min, score);
+      max = Math.max(max, score);
+    }
     // Ignore the last floating-point bits from posterior inference when ranking spans.
     return [{ input, min, max, spanRank: Math.round((max - min) * 1e15) }];
   }).sort((a, b) => b.spanRank - a.spanRank);
@@ -43,12 +52,15 @@ export function SensitivityBars({ model, values, result }: { model: CaseModel; v
       {ranges.length === 0 && (
         <p role="status" className="rounded-lg bg-slate-100 p-4">
           {baseline.score === undefined ? `No comparison: the original case cannot be scored. ${baseline.reason}`
-            : sweeps.length === 0 ? "No categorical Case Inputs can be varied for this decision."
+            : sweeps.length === 0 ? "No Case Inputs can be varied for this decision."
               : sweeps.length === 1 && sweeps[0].scores.length === 1
-                ? "No comparison: only one category can be scored."
-                : "No comparison: no categorical Case Input has two comparable scores."}
+                ? "No comparison: only one tested value can be scored."
+                : "No comparison: no Case Input has two comparable scores."}
         </p>
       )}
+      {unsampled.map(({ id, label }) => (
+        <p key={id} className="text-slate-700">{label} was not varied: no sampling declaration.</p>
+      ))}
       {ranges.length > 0 && (
         <figure className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <figcaption className="font-semibold">Do-Not-Consider Score ranges</figcaption>
@@ -80,12 +92,12 @@ export function SensitivityBars({ model, values, result }: { model: CaseModel; v
       )}
       {sweeps.length > 0 && (
         <section className="space-y-3">
-          <h3 className="font-semibold">Tested categories</h3>
+          <h3 className="font-semibold">Tested Case Input values</h3>
           {sweeps.map(({ input, samples, scores }) => (
             <table key={input.id} className="w-full table-fixed border-collapse text-left text-sm">
               <caption className="pb-1 text-left font-medium">{input.label}</caption>
               <thead className="bg-slate-50">
-                <tr><th scope="col" className="w-1/3 p-2">Category</th><th scope="col" className="p-2">Score or reason unavailable</th></tr>
+                <tr><th scope="col" className="w-1/3 p-2">{"values" in input ? "Category" : "Value"}</th><th scope="col" className="p-2">Score or reason unavailable</th></tr>
               </thead>
               <tbody>
                 {samples.map(({ id, label, score, reason }) => (

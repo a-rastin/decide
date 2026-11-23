@@ -1,6 +1,6 @@
 import { SaxesParser } from "saxes";
 import {
-  caseValueDisplayLabel, compareDecimals, decimalLiteral, type DecideModel,
+  caseValueDisplayLabel, compareDecimals, decimalLiteral, numericThresholds, type DecideModel,
   type NetworkCaseInput, type NetworkCondition, type NetworkDecision, type NetworkNode, type NumericRange, type RoutedDecision, type RoutedModel,
 } from "./model.ts";
 
@@ -428,13 +428,62 @@ function readNumericRanges(observe: XmlElement, input: string, states: { id: str
   return ranges;
 }
 
+function readSampling(input: XmlElement, id: string) {
+  if (!input.children.length) return undefined;
+  const sampling = child(input, "sampling");
+  validateElement(sampling, ["min", "max"], ["sample"]);
+  function decimalAttribute(element: XmlElement, name: string) {
+    const value = attribute(element, name);
+    if (!decimalLiteral.test(value)) throw new Error(`Invalid ${element.name} ${name} for Case Input "${id}": "${value}"`);
+    return value;
+  }
+  const min = decimalAttribute(sampling, "min");
+  const max = decimalAttribute(sampling, "max");
+  if (compareDecimals(min, max) > 0) throw new Error(`Case Input "${id}" has an inverted sampling interval`);
+  if (!sampling.children.length) throw new Error(`Sampling for Case Input "${id}" requires at least one sample`);
+  const samples = sampling.children.map((sample) => {
+    validateElement(sample, ["value"]);
+    const value = decimalAttribute(sample, "value");
+    if (compareDecimals(value, min) < 0 || compareDecimals(value, max) > 0) {
+      throw new Error(`Case Input "${id}" sample "${value}" is outside its sampling interval`);
+    }
+    return value;
+  });
+  const ordered = [...samples].sort(compareDecimals);
+  for (let i = 1; i < ordered.length; i++) {
+    if (compareDecimals(ordered[i - 1], ordered[i]) === 0) throw new Error(`Duplicate sample "${ordered[i]}" for Case Input "${id}"`);
+  }
+  return { min, max, samples };
+}
+
+function validateSamplingCoverage(decision: NetworkDecision, inputs: NetworkCaseInput[], decisionId: string) {
+  for (const binding of decision.inputs) {
+    if (!("ranges" in binding)) continue;
+    const input = inputs.find(({ id }) => id === binding.id);
+    if (!input || !("type" in input) || !input.sampling) continue;
+    const { min, max, samples } = input.sampling;
+    for (const threshold of numericThresholds(decision, binding)) {
+      const fromMin = compareDecimals(threshold, min);
+      const fromMax = compareDecimals(threshold, max);
+      if (fromMin < 0 || fromMax > 0) continue;
+      const covered = new Set(samples.map((sample) => compareDecimals(sample, threshold)));
+      for (const [side, order, required] of [["below", -1, fromMin > 0], ["at", 0, true], ["above", 1, fromMax < 0]] as const) {
+        if (required && !covered.has(order)) {
+          throw new Error(`Decision "${decisionId}": sampling for Case Input "${input.id}" requires a sample ${side} threshold ${threshold}`);
+        }
+      }
+    }
+  }
+}
+
 function readNetworkModel(root: XmlElement): RoutedModel {
   validateElement(root, ["version"], ["case-input", "network", "route"]);
   const inputs = childrenNamed(root, "case-input").map((input): NetworkCaseInput => {
     const type = attribute(input, "type");
     if (type === "numeric") {
-      validateElement(input, ["id", "label", "type", "unit"]);
-      return { ...labeledValue(input), type, unit: attribute(input, "unit") };
+      validateElement(input, ["id", "label", "type", "unit"], ["sampling"]);
+      const entry = labeledValue(input);
+      return { ...entry, type, unit: attribute(input, "unit"), sampling: readSampling(input, entry.id) };
     }
     if (type !== "categorical") throw new Error(`Unsupported Case Input type "${type}"`);
     validateElement(input, ["id", "label", "type"], ["value"]);
@@ -495,16 +544,15 @@ function readNetworkModel(root: XmlElement): RoutedModel {
     validateElement(applicability, [], [...networkPredicates, "source-condition", "citation"]);
     const predicates = applicability.children.filter(({ name }) => name !== "source-condition" && name !== "citation");
     if (predicates.length !== 1) throw new Error("Expected exactly one predicate in <applicability>");
-    return {
-      id, caseInputs,
-      decision: {
-        title: attribute(element, "title"), action: { ...action, node: actionNode },
-        inputs: bindings, nodes: network.nodes,
-        condition: readNetworkCondition(predicates[0], caseInputs),
-        applicability: { condition: text(applicability, "source-condition"), citation: text(applicability, "citation") },
-        convention: text(element, "research-modeling-convention"),
-      },
+    const decision = {
+      title: attribute(element, "title"), action: { ...action, node: actionNode },
+      inputs: bindings, nodes: network.nodes,
+      condition: readNetworkCondition(predicates[0], caseInputs),
+      applicability: { condition: text(applicability, "source-condition"), citation: text(applicability, "citation") },
+      convention: text(element, "research-modeling-convention"),
     };
+    validateSamplingCoverage(decision, caseInputs, id);
+    return { id, caseInputs, decision };
   });
   return { version: 3, routes };
 }

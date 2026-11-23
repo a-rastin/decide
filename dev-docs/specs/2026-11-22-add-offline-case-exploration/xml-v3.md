@@ -30,7 +30,9 @@ are allowed; text fields may contain character data or CDATA.
 | --- | --- | --- |
 | `decide-model` | `version="3"` | One or more each of `case-input`, `network`, and `route` |
 | `case-input` | `id`, `label`, `type="categorical"` | At least two `value` |
-| `case-input` | `id`, `label`, `type="numeric"`, `unit` | Empty |
+| `case-input` | `id`, `label`, `type="numeric"`, `unit` | Zero or one `sampling` |
+| `sampling` | `min`, `max` | One or more `sample` |
+| `sample` | `value` | Empty |
 | `value` | `id`, `label` | Empty |
 | `network` | `id` | One or more `node` |
 | `node` | `id` | At least two `state`, zero or more `parent`, and one or more `row` |
@@ -116,8 +118,39 @@ The build rejects empty or inverted ranges, gaps, overlaps, and unknown states.
 </observe>
 ```
 
-These are scoring ranges, not chart sampling intervals. Numeric chart
-sampling is not supported by this slice and does not limit accepted readings.
+These are scoring ranges, not chart sampling intervals.
+
+### Numeric Sensitivity Bars
+
+To vary a numeric Case Input in the tornado chart, list the exact test values
+inside a closed `sampling` interval. Bounds and values use the same exact
+decimal syntax and unit as case readings. A sample may equal a bound, and both
+bounds may be equal. Numerically identical samples (such as `0.30` and `3e-1`)
+are duplicates. The app displays the supplied values in declaration order.
+
+```xml
+<case-input id="reading" label="Synthetic reading" type="numeric" unit="points">
+  <sampling min="0.09" max="0.31">
+    <sample value="0.09" />
+    <sample value="1e-1" />
+    <sample value="0.2" />
+    <sample value="0.300" />
+    <sample value="0.31" />
+  </sampling>
+</case-input>
+```
+
+In this example, `0.1` is a source threshold and `0.3` is a model threshold.
+For every decision that binds the input, include a sample at every in-interval
+applicability threshold and scoring range endpoint, plus at least one sample
+strictly below and above each threshold where the interval permits. A
+threshold at the lower bound needs no sample below it; one at the upper bound
+needs none above. The build rejects inconsistent declarations before writing
+any output.
+
+The interval does not limit case entry. If `sampling` is omitted, the app
+explains why it skipped the input rather than choosing bounds or test values.
+Only samples with comparable scores contribute to the plotted range.
 
 ## Verification and publication
 
