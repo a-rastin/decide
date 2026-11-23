@@ -1,16 +1,30 @@
 import { caseValueDisplayLabel } from "../model.ts";
-import { caseInputsFor, evaluateCase, scoreFormat, type CaseModel, type CaseResult, type CaseValues } from "./case.tsx";
+import { caseInputsFor, evaluateCase, formatScore, scoreUnavailableReason, type CaseModel, type CaseResult, type CaseValues } from "./case.tsx";
 
 function sampleOutcome(model: CaseModel, result: CaseResult, actionId: string) {
-  if (result.status === "unmet") {
-    return { reason: `Guidance does not apply. Source condition: ${model.decision.applicability.condition}` };
-  }
-  if (result.status === "missing") return { reason: "Case Inputs are missing to determine whether guidance applies." };
-  if (result.status !== "applicable") return { reason: "A Case Input is invalid." };
-  if (result.action.id !== actionId) return { reason: "A different guidance option applies." };
-  if ("doNotConsiderScore" in result) return { score: result.doNotConsiderScore };
-  return { reason: result.scoreUnavailable.reason === "missing" ? "More Case Inputs are needed to compute a score."
-    : "The entered evidence has zero probability in this model." };
+  if ("doNotConsiderScore" in result) return result.action.id === actionId
+    ? { score: result.doNotConsiderScore } : { reason: "A different guidance option applies." };
+  return { reason: {
+    unmet: `Guidance does not apply. Source condition: ${model.decision.applicability.condition}`,
+    missing: "Case Inputs are missing to determine whether guidance applies.",
+    invalid: "A Case Input is invalid.",
+    "missing-evidence": "More Case Inputs are needed to compute a score.",
+    "zero-likelihood": "The entered evidence has zero probability in this model.",
+  }[scoreUnavailableReason(result).kind] };
+}
+
+function rangeLabel(min: number, max: number) {
+  const low = formatScore(min), high = formatScore(max);
+  if (min === max) return `No modeled change (${low})`;
+  return low === high ? `Change below display precision (both shown as ${low})` : `${low}–${high}`;
+}
+
+function scoreSpan(min: number, max: number) {
+  const span = max - min;
+  const reconstructedMin = max - span;
+  // Retain the subtraction's rounding error to break ties between distinct spans.
+  const residual = (max - (span + reconstructedMin)) + (reconstructedMin - min);
+  return { span, residual };
 }
 
 export function SensitivityBars({ model, values, result }: { model: CaseModel; values: CaseValues; result: CaseResult }) {
@@ -38,9 +52,8 @@ export function SensitivityBars({ model, values, result }: { model: CaseModel; v
       min = Math.min(min, score);
       max = Math.max(max, score);
     }
-    // Ignore the last floating-point bits from posterior inference when ranking spans.
-    return [{ input, min, max, spanRank: Math.round((max - min) * 1e15) }];
-  }).sort((a, b) => b.spanRank - a.spanRank);
+    return [{ input, min, max, ...scoreSpan(min, max) }];
+  }).sort((a, b) => b.span - a.span || b.residual - a.residual);
 
   return (
     <section aria-labelledby="sensitivity-heading" className="mt-8 space-y-4 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
@@ -65,19 +78,18 @@ export function SensitivityBars({ model, values, result }: { model: CaseModel; v
         <figure className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <figcaption className="font-semibold">Do-Not-Consider Score ranges</figcaption>
           <ol role="list" aria-label="Comparable score ranges" className="space-y-3">
-            {ranges.map(({ input, min, max, spanRank }) => (
+            {ranges.map(({ input, min, max, span }) => (
               <li key={input.id} className="grid items-center gap-1 sm:grid-cols-[1fr_2fr] sm:gap-4">
                 <p className="font-medium">{input.label}</p>
                 <div>
                   <p className="text-sm tabular-nums">
-                    {spanRank === 0 ? `No modeled change (${scoreFormat.format(min)})`
-                      : `${scoreFormat.format(min)}–${scoreFormat.format(max)}`}
+                    {rangeLabel(min, max)}
                   </p>
                   <div aria-hidden="true" className="relative mt-1 h-4 overflow-hidden rounded-sm bg-slate-200">
-                    {spanRank === 0
+                    {span === 0
                       ? <span className="absolute inset-y-0 w-1 -translate-x-1/2 bg-teal-700" style={{ left: `${min * 100}%` }} />
                       : <span className="absolute inset-y-0 rounded-sm bg-teal-700"
-                        style={{ left: `${min * 100}%`, width: `${(max - min) * 100}%` }} />}
+                        style={{ left: `${min * 100}%`, width: `${span * 100}%` }} />}
                   </div>
                 </div>
               </li>
@@ -103,7 +115,7 @@ export function SensitivityBars({ model, values, result }: { model: CaseModel; v
                 {samples.map(({ id, label, score, reason }) => (
                   <tr key={id} className="border-b border-slate-200">
                     <th scope="row" className="break-words p-2 font-medium">{label}</th>
-                    <td className="p-2 tabular-nums">{score === undefined ? reason : scoreFormat.format(score)}</td>
+                    <td className="p-2 tabular-nums">{score === undefined ? reason : formatScore(score)}</td>
                   </tr>
                 ))}
               </tbody>

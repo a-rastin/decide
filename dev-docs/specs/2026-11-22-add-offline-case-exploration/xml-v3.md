@@ -75,6 +75,22 @@ category labeled `Unknown`.
   calculated as the product of all node state counts before applying evidence.
   The evaluator enumerates the supported assignments, summing their masses
   without sampling. Unobserved nodes are marginalized.
+- The build also limits each decision to **128 applicability predicates**,
+  counting every `equals`, `compare`, `all`, and `any` element. The predicate
+  count multiplied by the number of possible applicability combinations must
+  be at most **65,536**. To calculate combinations, multiply the domain sizes
+  of inputs referenced by predicates: all values for a categorical input,
+  and `2t + 1` for a numeric input with `t` distinct source thresholds (each
+  threshold and each open interval). Scoring ranges and chart samples do not
+  affect this limit.
+- A decision may test at most **256 values** across its Case Inputs, counting
+  all categorical values and declared numeric chart samples. It must also fit
+  a **1,048,576 work-unit** case exploration budget. Multiply the estimated
+  cost of one evaluation by one plus the number of tested values.
+  The per-evaluation cost is the applicability product above, plus network
+  joint assignments times node count, plus the number of categorical
+  mappings and numeric ranges. This bounds the work for rendering the
+  original case and the full set of one-input comparisons together.
 
 ### Evidence, applicability, and guidance
 
@@ -89,9 +105,15 @@ even when a different state has the highest posterior.
 decision, not its network state. `compare` tests the original numeric reading
 in the declared unit, not its assigned band. `all` and `any` combine predicates; a known
 false operand settles `all` and a known true operand settles `any` even when
-another input is missing. An unmet or indeterminate source condition has no
-score. When guidance applies, use only the decision's declared evidence to
-compute `1 − P(selected action | evidence)`. Missing optional observations
+another input is missing. Malformed inputs are reported separately even if a
+known operand already establishes that guidance does not apply. An unmet or
+indeterminate source condition has no score. When guidance applies, use only
+the decision's declared evidence to compute `1 − P(selected action | evidence)`.
+The evaluator sums the posterior mass of the competing actions directly so
+that rounding the selected action's posterior to one does not erase a small
+positive score. It accumulates the binary64 weights exactly and rounds the
+posterior once, so equivalent evidence does not create spurious score changes.
+Missing optional observations
 are marginalized. Missing required observations or zero-likelihood evidence
 leave the guidance visible but unscored. The result measures modeled support
 for excluding that action, not a clinical probability.

@@ -5,10 +5,15 @@ import { caseValueDisplayLabel, evaluateDecision, evaluateNetworkDecision, unkno
 export type CaseModel = DecideModel | RoutedDecision;
 export type CaseValues = Record<string, string>;
 
-export const scoreFormat = new Intl.NumberFormat("en", {
+const scoreFormat = new Intl.NumberFormat("en", {
   style: "percent",
   maximumFractionDigits: 6,
 });
+
+export function formatScore(score: number) {
+  const formatted = scoreFormat.format(score);
+  return score > 0 && formatted === "0%" ? "<0.000001%" : formatted;
+}
 
 const knownCasePrefix = "known:";
 const unknownCaseOption = "unknown";
@@ -32,6 +37,19 @@ export function evaluateCase(model: CaseModel, values: CaseValues) {
 
 export type CaseResult = ReturnType<typeof evaluateCase>;
 
+export function scoreUnavailableReason(result: Exclude<CaseResult, { doNotConsiderScore: number }>) {
+  if (result.status !== "applicable") return { kind: result.status };
+  const reason = result.scoreUnavailable;
+  return reason.reason === "missing" ? { kind: "missing-evidence" as const, inputs: reason.inputs }
+    : { kind: "zero-likelihood" as const };
+}
+
+// null identifies the legacy result, which has only one Case Input.
+function invalidInputIds(result: CaseResult) {
+  if (result.status === "invalid") return "inputs" in result ? result.inputs : null;
+  return result.status === "unmet" ? result.invalidInputs ?? [] : [];
+}
+
 export function CaseInputFields({ model, values, result, setValue }: {
   model: CaseModel;
   values: CaseValues;
@@ -39,6 +57,7 @@ export function CaseInputFields({ model, values, result, setValue }: {
   setValue: (id: string, value: string) => void;
 }) {
   const groupId = useId();
+  const invalidInputs = invalidInputIds(result);
   return (
     <div className="space-y-5">
       {caseInputsFor(model).map((input) => {
@@ -47,7 +66,7 @@ export function CaseInputFields({ model, values, result, setValue }: {
           <label key={input.id} className="block font-medium">
             {inputLabel(input)}
             <input type="text" inputMode="decimal" value={selected} onChange={(event) => setValue(input.id, event.target.value)}
-              aria-invalid={result.status === "invalid" && (!("inputs" in result) || result.inputs.includes(input.id))}
+              aria-invalid={invalidInputs === null || invalidInputs.includes(input.id)}
               className="mt-3 block w-full rounded-lg border border-slate-300 p-3" />
           </label>
         ) : (
@@ -84,6 +103,8 @@ export function CaseResultDetails({ model, result, comparison = false }: {
   const convention = "convention" in decision ? decision.convention : decision.distribution.convention;
   const caseInputs = caseInputsFor(model);
   const inputLabels = (ids: string[]) => caseInputs.filter(({ id }) => ids.includes(id)).map(inputLabel);
+  const invalidInputs = invalidInputIds(result);
+  const unscored = "doNotConsiderScore" in result ? undefined : scoreUnavailableReason(result);
   const Heading = comparison ? "h4" : "h3";
   const Subheading = comparison ? "h5" : "h4";
 
@@ -95,12 +116,14 @@ export function CaseResultDetails({ model, result, comparison = false }: {
           {inputLabels("inputs" in result ? result.inputs : [caseInputs[0].id]).map((label, index) =>
             <p key={index} className="text-slate-700">{label}</p>)}
         </>
-      ) : result.status === "invalid" ? (
-        <p role={comparison ? undefined : "alert"}>{"inputs" in result ? `Invalid Case Input: ${inputLabels(result.inputs).join(", ")}` : "Invalid numeric Case Input"}</p>
-      ) : (
+      ) : result.status !== "invalid" && (
         <Heading className="font-serif text-3xl tracking-tight text-slate-950">
           {result.status === "applicable" ? result.action.label : "Guidance does not apply"}
         </Heading>
+      )}
+      {(invalidInputs === null || invalidInputs.length > 0) && (
+        <p role={comparison ? undefined : "alert"}>{invalidInputs === null
+          ? "Invalid numeric Case Input" : `Invalid Case Input: ${inputLabels(invalidInputs).join(", ")}`}</p>
       )}
       {(comparison || result.status === "applicable" || result.status === "unmet") && (
         <dl className="border-s-2 border-teal-500 ps-4">
@@ -114,13 +137,13 @@ export function CaseResultDetails({ model, result, comparison = false }: {
         <>
           {"doNotConsiderScore" in result ? <section className="rounded-xl bg-teal-950 p-5 text-teal-50">
             <Subheading className="font-medium">Do-Not-Consider Score</Subheading>
-            <p className="my-2 text-4xl font-semibold tabular-nums">{scoreFormat.format(result.doNotConsiderScore)}</p>
+            <p className="my-2 text-4xl font-semibold tabular-nums">{formatScore(result.doNotConsiderScore)}</p>
             <p className="text-sm leading-relaxed text-teal-100">
               This score measures modeled support for leaving this action out of consideration.
               It does not estimate a clinical outcome.
             </p>
-          </section> : <p>{result.scoreUnavailable.reason === "missing"
-            ? `No score. Supply: ${inputLabels(result.scoreUnavailable.inputs).join(", ")}.`
+          </section> : <p>{unscored?.kind === "missing-evidence"
+            ? `No score. Supply: ${inputLabels(unscored.inputs).join(", ")}.`
             : "No score. The entered evidence has zero probability in this model."}</p>}
           <section>
             <Subheading className="text-sm font-semibold">Research Modeling Convention</Subheading>

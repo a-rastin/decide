@@ -29,8 +29,49 @@ afterAll(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-const extraNodes = Array.from({ length: 10 }, (_, i) =>
+const extraNodes = (count: number) => Array.from({ length: count }, (_, i) =>
   `<node id="extra-${i}"><state id="a" label="A"/><state id="b" label="B"/><row probabilities="0.5 0.5"/></node>`).join("");
+
+test("rejects a decision with too many applicability combinations despite a small network", async () => {
+  const ids = ["one", "two", "three", "four"];
+  const changed = xml
+    .replace("<network ", `${ids.map((id) =>
+      `<case-input id="${id}" label="${id}" type="numeric" unit="points"/>`).join("")}<network `)
+    .replace("</network>", `${extraNodes(ids.length)}</network>`)
+    .replace("<applicability>", `${ids.map((id, i) =>
+      `<observe input="${id}" node="extra-${i}"><range state="a"/></observe>`).join("")}<applicability>`)
+    .replace(/<any>[^]*?<\/any>/, (predicate) => `<all>${predicate}${ids.map((id) =>
+      `<any>${[1, 2, 3, 4, 5].map((threshold) =>
+        `<compare input="${id}" operator="eq" threshold="${threshold}"/>`).join("")}</any>`).join("")}</all>`);
+  const invalid = join(directory, "invalid.xml");
+  const output = join(directory, "app");
+  await writeFile(invalid, changed);
+  const rejection = buildApp(invalid, output, [...verify, "--replace"]);
+  expect(rejection.status).not.toBe(0);
+  expect(rejection.stderr).toMatch(/review-sample.*applicability limit/);
+  expect(await readArtifact(output)).toEqual(before);
+}, 15_000);
+
+test("rejects a sensitivity sweep that would repeatedly evaluate a costly blank case", async () => {
+  const ids = ["one", "two", "three", "four", "five", "six", "sampled"];
+  const samples = Array.from({ length: 64 }, (_, value) => `<sample value="${value}"/>`).join("");
+  const changed = xml
+    .replace("<network ", `${ids.map((id) =>
+      `<case-input id="${id}" label="${id}" type="numeric" unit="points">${
+        id === "sampled" ? `<sampling min="0" max="63">${samples}</sampling>` : ""}</case-input>`).join("")}<network `)
+    .replace("</network>", `${extraNodes(ids.length)}</network>`)
+    .replace("<applicability>", `${ids.map((id, i) =>
+      `<observe input="${id}" node="extra-${i}"><range state="a"/></observe>`).join("")}<applicability>`)
+    .replace("</any>", `${ids.slice(0, -1).map((id) =>
+      `<compare input="${id}" operator="eq" threshold="1"/>`).join("")}</any>`);
+  const invalid = join(directory, "invalid.xml");
+  const output = join(directory, "app");
+  await writeFile(invalid, changed);
+  const rejection = buildApp(invalid, output, [...verify, "--replace"]);
+  expect(rejection.status).not.toBe(0);
+  expect(rejection.stderr).toMatch(/review-sample.*case exploration limit.*work units/);
+  expect(await readArtifact(output)).toEqual(before);
+}, 15_000);
 
 test.each([
   ["unknown network", 'network="review-network"', 'network="missing"', /unknown network/],
@@ -53,7 +94,9 @@ test.each([
   ["missing state mapping", '<map value="outside" state="excluded" />', '', /incomplete state mapping/i],
   ["unknown mapped state", 'value="outside" state="excluded"', 'value="outside" state="missing"', /invalid or duplicate state mapping/i],
   ["duplicate mapping", 'value="outside" state="excluded"', 'value="clear" state="excluded"', /invalid or duplicate state mapping/i],
-  ["network over inference limit", '</network>', `${extraNodes}</network>`, /inference limit of 4096/],
+  ["network over inference limit", '</network>', `${extraNodes(10)}</network>`, /inference limit of 4096/],
+  ["too many predicate elements", '<equals input="screen" value="clear" />',
+    '<equals input="screen" value="clear" />'.repeat(128), /applicability limit of 128 predicate elements/],
 ] as const)("rejects a model with %s and preserves the artifact", async (_name, original, replacement, diagnostic) => {
   const output = join(directory, "app");
   const invalid = join(directory, "invalid.xml");
@@ -194,6 +237,9 @@ test.each([
   ["non-decimal sample", '<sampling min="0" max="0.4"><sample value="NaN"/></sampling>', /invalid sample value/i],
   ["out-of-interval sample", '<sampling min="0" max="0.3"><sample value="0.30000000000000000001"/></sampling>', /sample .*outside/],
   ["exact decimal duplicate", '<sampling min="0" max="0.4"><sample value="0.30"/><sample value="3e-1"/></sampling>', /duplicate sample/i],
+  ["too many sample rows for a small model", `<sampling min="0" max="256">${
+    ["0.1", "0.3", ...Array.from({ length: 257 }, (_, i) => i)].map((value) => `<sample value="${value}"/>`).join("")
+  }</sampling>`, /case exploration limit.*256 tested values/],
 ] as const)("rejects numeric sampling with %s before replacing an existing artifact", async (_name, sampling, diagnostic) => {
   await expectRejectedSampling(sampling, diagnostic);
 }, 15_000);

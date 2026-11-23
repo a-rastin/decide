@@ -1,6 +1,6 @@
 import { SaxesParser } from "saxes";
 import {
-  caseValueDisplayLabel, compareDecimals, decimalLiteral, numericThresholds, type DecideModel,
+  applicabilityDomains, caseValueDisplayLabel, compareDecimals, decimalLiteral, numericThresholds, type DecideModel,
   type NetworkCaseInput, type NetworkCondition, type NetworkDecision, type NetworkNode, type NumericRange, type RoutedDecision, type RoutedModel,
 } from "./model.ts";
 
@@ -308,7 +308,8 @@ function readNetwork(network: XmlElement) {
   });
   if (!nodes.length) throw new Error(`Network "${id}" has no nodes`);
   validateUniqueIds(nodes, "node");
-  if (nodes.reduce((count, node) => count * node.states.length, 1) > assignmentLimit) {
+  const assignments = nodes.reduce((count, node) => count * node.states.length, 1);
+  if (assignments > assignmentLimit) {
     throw new Error(`Network "${id}" exceeds the inference limit of ${assignmentLimit} joint assignments`);
   }
   const byId = new Map(nodes.map((node) => [node.id, node]));
@@ -356,12 +357,17 @@ function readNetwork(network: XmlElement) {
     visiting.delete(node.id);
   }
   nodes.forEach(visit);
-  return { id, byId, nodes: [...ordered.values()] };
+  return { id, byId, assignments, nodes: [...ordered.values()] };
 }
 
 const networkPredicates = ["equals", "compare", "all", "any"];
+const predicateLimit = 128;
+const applicabilityWorkLimit = 65_536;
+const explorationWorkLimit = 1_048_576;
+const explorationSampleLimit = 256;
 
-function readNetworkCondition(element: XmlElement, inputs: NetworkCaseInput[]): NetworkCondition {
+function readNetworkCondition(element: XmlElement, inputs: NetworkCaseInput[], countPredicate: () => void): NetworkCondition {
+  countPredicate();
   if (element.name === "equals" || element.name === "compare") {
     validateElement(element, element.name === "equals" ? ["input", "value"] : ["input", "operator", "threshold"]);
     const input = attribute(element, "input");
@@ -385,7 +391,7 @@ function readNetworkCondition(element: XmlElement, inputs: NetworkCaseInput[]): 
   if (element.name !== "all" && element.name !== "any") throw new Error(`Unexpected predicate <${element.name}>`);
   validateElement(element, [], networkPredicates);
   if (element.children.length < 2) throw new Error(`<${element.name}> requires at least two predicates`);
-  return { kind: element.name, operands: element.children.map((operand) => readNetworkCondition(operand, inputs)) };
+  return { kind: element.name, operands: element.children.map((operand) => readNetworkCondition(operand, inputs, countPredicate)) };
 }
 
 function readNumericRanges(observe: XmlElement, input: string, states: { id: string }[]): NumericRange[] {
@@ -544,13 +550,34 @@ function readNetworkModel(root: XmlElement): RoutedModel {
     validateElement(applicability, [], [...networkPredicates, "source-condition", "citation"]);
     const predicates = applicability.children.filter(({ name }) => name !== "source-condition" && name !== "citation");
     if (predicates.length !== 1) throw new Error("Expected exactly one predicate in <applicability>");
+    let predicateCount = 0;
+    const condition = readNetworkCondition(predicates[0], caseInputs, () => {
+      if (++predicateCount > predicateLimit) {
+        throw new Error(`Decision "${id}" exceeds the applicability limit of ${predicateLimit} predicate elements`);
+      }
+    });
     const decision = {
       title: attribute(element, "title"), action: { ...action, node: actionNode },
       inputs: bindings, nodes: network.nodes,
-      condition: readNetworkCondition(predicates[0], caseInputs),
+      condition,
       applicability: { condition: text(applicability, "source-condition"), citation: text(applicability, "citation") },
       convention: text(element, "research-modeling-convention"),
     };
+    const applicabilityWork = applicabilityDomains(decision).reduce((cost, { candidates }) => cost * candidates.length, predicateCount);
+    if (applicabilityWork > applicabilityWorkLimit) {
+      throw new Error(`Decision "${id}" exceeds the applicability limit of ${applicabilityWorkLimit} predicate visits`);
+    }
+    const samples = caseInputs.reduce((count, input) =>
+      count + ("values" in input ? input.values.length : input.sampling?.samples.length ?? 0), 0);
+    if (samples > explorationSampleLimit) {
+      throw new Error(`Decision "${id}" exceeds the case exploration limit of ${explorationSampleLimit} tested values`);
+    }
+    const inputMappings = bindings.reduce((count, binding) =>
+      count + ("values" in binding ? binding.values.length : binding.ranges.length), 0);
+    const evaluationWork = applicabilityWork + network.assignments * network.nodes.length + inputMappings;
+    if ((1 + samples) * evaluationWork > explorationWorkLimit) {
+      throw new Error(`Decision "${id}" exceeds the case exploration limit of ${explorationWorkLimit} work units for the baseline and all sensitivity samples`);
+    }
     validateSamplingCoverage(decision, caseInputs, id);
     return { id, caseInputs, decision };
   });

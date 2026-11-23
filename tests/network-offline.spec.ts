@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page, type TestInfo } from "@playwright/test";
 import { buildApp } from "./build-app.ts";
 
 const explorationFixture = "fixtures/joint-exploration";
@@ -399,18 +399,38 @@ test("explains unavailable categorical comparisons without retaining ranges or g
 });
 
 test("shows the common score for equal categorical samples in stable input order", async ({ browser }, testInfo) => {
+  await expectSensitivitySpans(browser, testInfo, "equal");
+});
+
+test("ranks unequal spans below display precision without calling them ties", async ({ browser }, testInfo) => {
+  await expectSensitivitySpans(browser, testInfo, "tiny");
+});
+
+test("ranks 0%–100% ahead of a range whose small positive endpoint displays near zero", async ({ browser }, testInfo) => {
+  await expectSensitivitySpans(browser, testInfo, "near-full");
+});
+
+async function expectSensitivitySpans(browser: Browser, testInfo: TestInfo, span: "equal" | "tiny" | "near-full") {
   const fixture = "fixtures/routed-network";
   const model = testInfo.outputPath("equal-scores.xml");
   const cases = testInfo.outputPath("cases.json");
   const output = testInfo.outputPath("equal-scores");
   await mkdir(testInfo.outputDir, { recursive: true });
+  const weights = {
+    equal: { baseline: "0.3 0.7", observation: "0.3 0.7", marker: "0.3 0.7" },
+    tiny: { baseline: "0.3 0.7", observation: "0.3000000000000003 0.6999999999999997", marker: "0.3000000000000001 0.6999999999999998" },
+    "near-full": { baseline: "0 1", observation: "1 0", marker: "1 5.551115123125783e-17" },
+  }[span];
   await writeFile(model, (await readFile(`${fixture}/model.xml`, "utf8"))
     .replaceAll('value id="impossible" label="Impossible"', 'value id="impossible" label="Unknown"')
     .replace('probabilities="0.5 0.5 0"', 'probabilities="0.75 0.25 0"')
     .replace('probabilities="0.5 0.5"', 'probabilities="0.4 0.6"')
-    .replace('when="yes yes" probabilities="0.1 0.9"', 'when="yes yes" probabilities="0.3 0.7"')
-    .replace('when="no yes" probabilities="0.6 0.4"', 'when="no yes" probabilities="0.3 0.7"'));
-  await writeFile(cases, (await readFile(`${fixture}/cases.json`, "utf8")).replace(/"score": 0\.[89]/g, '"score": 0.7'));
+    .replace('when="yes yes" probabilities="0.1 0.9"', `when="yes yes" probabilities="${weights.baseline}"`)
+    .replace('when="no yes" probabilities="0.6 0.4"', `when="no yes" probabilities="${weights.observation}"`)
+    .replace('when="yes no" probabilities="0.3 0.7"', `when="yes no" probabilities="${weights.marker}"`));
+  await writeFile(cases, (await readFile(`${fixture}/cases.json`, "utf8"))
+    .replaceAll('"score": 0.9', span === "near-full" ? '"score": 1' : '"score": 0.7')
+    .replace('"score": 0.8', span === "near-full" ? '"score": 0.4' : '"score": 0.7'));
   const run = buildApp(model, output, ["--cases", cases, "--inventory", `${fixture}/inventory.json`]);
   expect(run.status, run.stderr).toBe(0);
   const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
@@ -424,12 +444,60 @@ test("shows the common score for equal categorical samples in stable input order
     await inputs.getByRole("radiogroup", { name: "Shared synthetic marker" }).getByText("Yes", { exact: true }).click();
 
     const ranges = page.getByRole("list", { name: "Comparable score ranges" });
-    await expect(ranges.getByRole("listitem")).toHaveText([
-      /Shared synthetic marker.*No modeled change.*70%/, /Synthetic observation.*No modeled change.*70%/,
-    ]);
+    await expect(ranges.getByRole("listitem")).toHaveText({
+      equal: [/Shared synthetic marker.*No modeled change.*70%/, /Synthetic observation.*No modeled change.*70%/],
+      tiny: [/Synthetic observation.*Change below display precision/, /Shared synthetic marker.*Change below display precision/],
+      "near-full": [/Synthetic observation.*0%–100%/, /Shared synthetic marker.*<0\.000001%–100%/],
+    }[span]);
     const observations = page.getByRole("table", { name: "Synthetic observation" });
     await expect(observations.getByRole("rowheader", { name: "Unknown (modeled value)" })).toBeVisible();
     await expect(observations.getByRole("rowheader", { name: "Unknown", exact: true })).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+}
+
+test("marks a malformed reading even when a separate source condition is unmet", async ({ browser }, testInfo) => {
+  const fixture = "fixtures/joint-exploration";
+  const model = testInfo.outputPath("guarded.xml");
+  const output = testInfo.outputPath("guarded-app");
+  await mkdir(testInfo.outputDir, { recursive: true });
+  await writeFile(model, (await readFile(`${fixture}/model.xml`, "utf8"))
+    .replace(/<any>\n          <compare[^]*?<\/any>\n        <source-condition>/,
+      `<all>
+        <any><equals input="marker" value="a"/><equals input="marker" value="b"/><equals input="marker" value="impossible"/></any>
+        <compare input="reading" operator="gte" threshold="0.1"/>
+      </all>
+        <source-condition>`)
+    .replace("The reading is at least 0.3 points, or it is at least 0.1 points and the marker is not Outside exercise.",
+      "The reading is at least 0.1 points and the marker is not Outside exercise."));
+  const run = buildApp(model, output, ["--cases", `${fixture}/cases.json`, "--inventory", `${fixture}/inventory.json`]);
+  expect(run.status, run.stderr).toBe(0);
+  const context = await browser.newContext({ offline: true, serviceWorkers: "block" });
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(join(output, "index.html")).href);
+    await page.getByText("Synthetic exploration", { exact: true }).click();
+    await page.getByText("Joint review", { exact: true }).click();
+    const inputs = page.getByRole("region", { name: "Synthetic Case Input" });
+    await inputs.getByText("Outside exercise", { exact: true }).click();
+    const reading = inputs.getByRole("textbox", { name: "Synthetic reading (points)" });
+    await reading.fill("abc");
+    const result = page.getByRole("region", { name: "Decision result" });
+    await expect(result.getByRole("heading", { name: "Guidance does not apply" })).toBeVisible();
+    await expect(result.getByRole("alert")).toHaveText("Invalid Case Input: Synthetic reading (points)");
+    await expect(reading).toHaveAttribute("aria-invalid", "true");
+
+    await page.getByRole("button", { name: "Open What-If Sandbox" }).click();
+    const variant = page.getByRole("region", { name: "What-if variant" });
+    const variantReading = variant.getByRole("textbox", { name: "Synthetic reading (points)" });
+    await expect(variant.getByText("Invalid Case Input: Synthetic reading (points)")).toBeVisible();
+    await expect(variantReading).toHaveAttribute("aria-invalid", "true");
+    await variantReading.fill("0.2");
+    await expect(variantReading).toHaveAttribute("aria-invalid", "false");
+    await expect(variant.getByText("Invalid Case Input: Synthetic reading (points)")).toHaveCount(0);
+    await expect(reading).toHaveAttribute("aria-invalid", "true");
+    await expect(result.getByRole("heading", { name: "Do-Not-Consider Score" })).toHaveCount(0);
   } finally {
     await context.close();
   }

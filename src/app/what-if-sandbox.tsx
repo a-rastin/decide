@@ -1,17 +1,18 @@
 import { Button } from "@heroui/react";
 import { useId, useState } from "react";
-import { CaseInputFields, CaseResultDetails, caseInputsFor, caseValue, evaluateCase, type CaseModel, type CaseResult, type CaseValues } from "./case.tsx";
+import { CaseInputFields, CaseResultDetails, caseInputsFor, caseValue, evaluateCase, scoreUnavailableReason, type CaseModel, type CaseResult, type CaseValues } from "./case.tsx";
 
 const differenceFormat = new Intl.NumberFormat("en", { maximumFractionDigits: 6, signDisplay: "exceptZero" });
 
 function whyUnavailable(result: CaseResult): string | undefined {
-  if (result.status === "missing") return "needs Case Inputs to determine whether guidance applies";
-  if (result.status === "invalid") return "has an invalid Case Input";
-  if (result.status === "unmet") return "has guidance that does not apply";
-  if ("scoreUnavailable" in result) {
-    return result.scoreUnavailable.reason === "missing" ? "needs more Case Inputs to compute a score"
-      : "has evidence with zero probability in the model";
-  }
+  if ("doNotConsiderScore" in result) return;
+  return {
+    missing: "needs Case Inputs to determine whether guidance applies",
+    invalid: "has an invalid Case Input",
+    unmet: "has guidance that does not apply",
+    "missing-evidence": "needs more Case Inputs to compute a score",
+    "zero-likelihood": "has evidence with zero probability in the model",
+  }[scoreUnavailableReason(result).kind];
 }
 
 function compareScores(original: CaseResult, variant: CaseResult) {
